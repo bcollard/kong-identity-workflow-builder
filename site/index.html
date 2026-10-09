@@ -701,6 +701,7 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
       body_filter: ['<trim-agent-card.lua>']`);
     if((s.analytics||[]).includes("prom")) pol.push(`  - ref: metrics\n    name: metrics\n    display_name: Metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
     const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`:"";
+    const stratName = d.auth.plugin==="openid-connect"?`${s.caller}-auth`:`${s.caller}-keys`;
     let ent;
     if(s.target==="models") ent=`    models:
       - ref: ${d.tgt.name}
@@ -711,14 +712,14 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
         formats: [{ type: openai }]
         config: { route: { paths: [/v1], model: { body_param: model, values: [${d.tgt.name}] } } }
         targets: [{ name: gpt-4.1, provider: openai, config: { type: openai } }]
-        access: { auth_strategies: [${d.auth.plugin==="openid-connect"?s.caller+"-auth":s.caller+"-keys"}]${allow} }`;
+        access: { auth_strategies: [${stratName}]${allow} }`;
     else if(s.target==="a2a") ent=`    agents:
       - ref: ${d.tgt.name}
         name: ${d.tgt.name}
         display_name: ${d.tgt.name}
         type: a2a
         config: { url: http://kongair-agent.internal:10000/, route: { paths: [/agents/${d.tgt.name}] }, logging: { statistics: true } }
-        access: { auth_strategies: [${s.caller}-auth]${allow} }
+        access: { auth_strategies: [${stratName}]${allow} }
         policies: [trim-agent-card]`;
     else ent=`    mcp_servers:
       - ref: ${d.tgt.name}
@@ -727,12 +728,34 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
         type: passthrough-listener
         config: { url: https://mcp.github.example/mcp, route: { paths: [/mcp/github] } }
         access:
-          auth_strategies: [${s.caller}-auth]
+          auth_strategies: [${stratName}]
           acl_attribute_type: ${s.access==="claimacl"?"oauth_access_token":"consumer"}${s.access==="subcg"?`
           acls: { allow: [${d.tgt.sub}] }`:""}${s.access==="claimacl"?`
           access_token_claim_field: .${d.idp.groups}
           default_tool_acls: { allow: [${d.tgt.name}-users] }`:""}`;
-    return {lang:"yaml",title:s.deploy==="konnect"?"kongctl apply -f aigw.yaml":"deck ai sync aigw.yaml",text:`${s.deploy==="konnect"?"# kongctl apply -f aigw.yaml":"# deck ai sync (self-managed)"}
+    if(s.deploy==="self"){
+      // deck ai sync reads the flat AI Gateway entity model (ai-deck-converter input): no ai_gateways wrapper, no refs,
+      // group membership listed on the consumer, providers declared as model_providers.
+      const flat = x => x.replace(/- ref: (\S+)([^\n]*)\n\s+name: \S+/g, "- name: $1$2").replace(/^ {4}/gm, "");
+      const ents = flat(ent)
+        .replace(/ model: \{ body_param: model, values: (\[[^\]]*\]) \}/, " model: { values: $1 }")
+        .replace(s.target==="mcp"?/config: \{ url: (\S+), route:/:/$^/, "upstream_url: $1\n    config: { route:");
+      const consSelf = d.co?`consumers:
+  - name: ${d.who.name}
+    type: ${d.auth.plugin==="key-auth"?"api-key":"oauth"}
+${d.auth.plugin==="key-auth"?`    credentials: [{ name: ${d.who.name}-key, type: api-key, api_key: "{vault://env/${d.who.name.toUpperCase().replace(/[^A-Z0-9]/g,"_")}_KEY}" }]\n`:`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${d.groups.length?`    consumer_groups: [${d.groups.map(g=>g.name).join(", ")}]\n`:""}`:"";
+      const cgsSelf = d.groups.map(g=>`  - { name: ${g.name}, display_name: "${g.kind} · ${g.owner}" }`).join("\n");
+      const prov = s.target==="models"?`model_providers:
+  - name: openai
+    type: openai
+    config: { auth: { type: basic, headers: [{ name: Authorization, value: "Bearer {vault://env/OPENAI_API_KEY}" }] } }
+`:"";
+      return {lang:"yaml",title:"deck ai sync aigw.yaml",text:`# deck ai sync aigw.yaml   (self-managed; preview the lowered config with: deck file ai2kong -s aigw.yaml)
+auth_strategies:
+${flat(strat.replace(/^/gm,"    ")).replace(/^/gm,"")}
+${cgsSelf?`consumer_groups:\n${cgsSelf}\n`:""}${consSelf}${pol.length?`policies:\n${flat(pol.join("\n").replace(/^/gm,"    "))}\n`:""}${prov}${ents}`};
+    }
+    return {lang:"yaml",title:"kongctl apply -f aigw.yaml",text:`# kongctl apply -f aigw.yaml
 ai_gateways:
   - ref: aigw
     name: acme-aigw

@@ -50,7 +50,8 @@ test("declarative output parses as YAML with the expected top-level shape", () =
     const r = render(X, s);
     let doc;
     try { doc = yaml.load(r.cfg.decl.text); } catch (e) { fail(s, `YAML: ${e.message.split("\n")[0]}`); continue; }
-    if (s.product === "ai") { if (!Array.isArray(doc?.ai_gateways)) fail(s, "kongctl file without ai_gateways"); }
+    if (s.product === "ai" && s.deploy === "konnect") { if (!Array.isArray(doc?.ai_gateways)) fail(s, "kongctl file without ai_gateways"); }
+    else if (s.product === "ai") { if (doc?.ai_gateways || !Array.isArray(doc?.auth_strategies)) fail(s, "deck ai sync file must be the flat entity model"); }
     else if (doc?._format_version !== "3.0") fail(s, "decK file without _format_version 3.0");
   }
   report("YAML");
@@ -67,7 +68,7 @@ test("decK plugins match the Kong plugin schemas of the selected version", () =>
 test("AI Gateway 2.x auth strategies and policies match the AI Gateway 2.2 plugin schemas", () => {
   for (const s of CLASSES.filter(c => c.product === "ai")) {
     const doc = yaml.load(render(X, s).cfg.decl.text);
-    for (const gw of doc.ai_gateways) {
+    for (const gw of doc.ai_gateways || [doc]) {
       for (const a of gw.auth_strategies || []) for (const e of checkConfig(a.type, a.config, "aigw-2.2", `auth_strategies(${a.name})`)) fail(s, e);
       for (const p of gw.policies || []) for (const e of checkConfig(p.type, p.config, "aigw-2.2", `policies(${p.name})`)) fail(s, e);
     }

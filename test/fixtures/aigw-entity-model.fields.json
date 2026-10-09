@@ -1,0 +1,512 @@
+{
+ "agents": {
+  "access": {
+   "acls": {
+    "allow": "scalar",
+    "deny": "scalar"
+   },
+   "auth_strategies": "scalar"
+  },
+  "config": {
+   "logging": {
+    "audits": "scalar",
+    "max_payload_size": "scalar",
+    "payloads": "scalar",
+    "statistics": "scalar"
+   },
+   "max_request_body_size": "scalar",
+   "proxy": {
+    "auth": {
+     "password": "scalar",
+     "username": "scalar"
+    },
+    "http_proxy": {
+     "host": "scalar",
+     "port": "scalar"
+    },
+    "https_proxy": {
+     "host": "scalar",
+     "port": "scalar"
+    },
+    "no_proxy": "scalar",
+    "proxy_scheme": "scalar"
+   },
+   "route": {
+    "destinations": {
+     "ip": "scalar",
+     "port": "scalar"
+    },
+    "headers": "open",
+    "hosts": "scalar",
+    "https_redirect_status_code": "scalar",
+    "methods": "scalar",
+    "name": "scalar",
+    "path_handling": "scalar",
+    "paths": "scalar",
+    "preserve_host": "scalar",
+    "protocols": "scalar",
+    "regex_priority": "scalar",
+    "request_buffering": "scalar",
+    "response_buffering": "scalar",
+    "snis": "scalar",
+    "sources": {
+     "ip": "scalar",
+     "port": "scalar"
+    },
+    "strip_path": "scalar",
+    "tags": "scalar"
+   },
+   "upstream": {
+    "auth": {
+     "access_key_id": "scalar",
+     "assume_role_arn": "scalar",
+     "region": "scalar",
+     "role_session_name": "scalar",
+     "secret_access_key": "scalar",
+     "session_token": "scalar",
+     "sts_endpoint_url": "scalar",
+     "type": "scalar"
+    }
+   },
+   "url": "scalar"
+  },
+  "display_name": "scalar",
+  "enabled": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "policies": "scalar",
+  "type": "scalar"
+ },
+ "auth_strategies": {
+  "config": "open",
+  "display_name": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "type": "scalar"
+ },
+ "ca_certificates": {
+  "cert": "scalar",
+  "cert_digest": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar"
+ },
+ "certificates": {
+  "cert": "scalar",
+  "cert_alt": "scalar",
+  "id": "scalar",
+  "key": "scalar",
+  "key_alt": "scalar",
+  "labels": "open",
+  "name": "scalar"
+ },
+ "consumer_groups": {
+  "display_name": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "policies": "scalar"
+ },
+ "consumers": {
+  "consumer_groups": "scalar",
+  "credentials": {
+   "api_key": "scalar",
+   "display_name": "scalar",
+   "id": "scalar",
+   "labels": "open",
+   "name": "scalar",
+   "ttl": "scalar",
+   "type": "scalar"
+  },
+  "custom_id": "scalar",
+  "display_name": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "policies": "scalar",
+  "type": "scalar"
+ },
+ "custom_policies": {
+  "handler": "scalar",
+  "id": "scalar",
+  "name": "scalar",
+  "schema": "scalar",
+  "type": "scalar"
+ },
+ "datastores": {
+  "config": "open",
+  "name": "scalar",
+  "type": "scalar"
+ },
+ "identity_providers": {
+  "config": "open",
+  "display_name": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "type": "scalar"
+ },
+ "mcp_servers": {
+  "access": {
+   "access_token_claim_field": "scalar",
+   "acl_attribute_type": "scalar",
+   "acls": {
+    "allow": "scalar",
+    "deny": "scalar"
+   },
+   "auth_strategies": "scalar",
+   "default_tool_acls": {
+    "allow": "scalar",
+    "deny": "scalar"
+   },
+   "metadata": {
+    "authorization_servers": "scalar",
+    "discovery_endpoint": "scalar",
+    "endpoint": "scalar",
+    "resource": "scalar",
+    "scopes_supported": "scalar"
+   }
+  },
+  "config": {
+   "logging": {
+    "audits": "scalar",
+    "max_payload_size": "scalar",
+    "payloads": "scalar",
+    "statistics": "scalar"
+   },
+   "max_request_body_size": "scalar",
+   "proxy": {
+    "auth": {
+     "password": "scalar",
+     "username": "scalar"
+    },
+    "http_proxy": {
+     "host": "scalar",
+     "port": "scalar"
+    },
+    "https_proxy": {
+     "host": "scalar",
+     "port": "scalar"
+    },
+    "no_proxy": "scalar",
+    "proxy_scheme": "scalar"
+   },
+   "route": {
+    "destinations": {
+     "ip": "scalar",
+     "port": "scalar"
+    },
+    "headers": "open",
+    "hosts": "scalar",
+    "https_redirect_status_code": "scalar",
+    "methods": "scalar",
+    "name": "scalar",
+    "path_handling": "scalar",
+    "paths": "scalar",
+    "preserve_host": "scalar",
+    "protocols": "scalar",
+    "regex_priority": "scalar",
+    "request_buffering": "scalar",
+    "response_buffering": "scalar",
+    "snis": "scalar",
+    "sources": {
+     "ip": "scalar",
+     "port": "scalar"
+    },
+    "strip_path": "scalar",
+    "tags": "scalar"
+   },
+   "server": "open",
+   "sources": "scalar",
+   "tools_cache_ttl_seconds": "scalar",
+   "upstream": {
+    "auth": {
+     "access_key_id": "scalar",
+     "assume_role_arn": "scalar",
+     "region": "scalar",
+     "role_session_name": "scalar",
+     "secret_access_key": "scalar",
+     "session_token": "scalar",
+     "sts_endpoint_url": "scalar",
+     "type": "scalar"
+    }
+   }
+  },
+  "display_name": "scalar",
+  "enabled": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "policies": "scalar",
+  "token_vault": {
+   "directory": "scalar",
+   "encryption_secrets": "scalar",
+   "provider": "scalar",
+   "redis": {
+    "cloud_authentication": {
+     "access_key_id": "scalar",
+     "assume_role_arn": "scalar",
+     "cache_name": "scalar",
+     "client_id": "scalar",
+     "client_secret": "scalar",
+     "is_serverless": "scalar",
+     "region": "scalar",
+     "role_session_name": "scalar",
+     "secret_access_key": "scalar",
+     "service_account_json": "scalar",
+     "tenant_id": "scalar",
+     "type": "scalar"
+    },
+    "cluster": {
+     "max_redirections": "scalar",
+     "nodes": {
+      "host": "scalar",
+      "ip": "scalar",
+      "port": "scalar"
+     }
+    },
+    "connect_timeout": "scalar",
+    "connection_is_proxied": "scalar",
+    "database": "scalar",
+    "host": "scalar",
+    "keepalive": {
+     "backlog": "scalar",
+     "pool_size": "scalar"
+    },
+    "password": "scalar",
+    "port": "scalar",
+    "read_timeout": "scalar",
+    "send_timeout": "scalar",
+    "sentinel": {
+     "master": "scalar",
+     "nodes": {
+      "host": "scalar",
+      "ip": "scalar",
+      "port": "scalar"
+     },
+     "password": "scalar",
+     "role": "scalar",
+     "username": "scalar"
+    },
+    "server_name": "scalar",
+    "ssl": "scalar",
+    "ssl_verify": "scalar",
+    "username": "scalar"
+   }
+  },
+  "tools": {
+   "access": {
+    "acls": {
+     "allow": "scalar",
+     "deny": "scalar"
+    }
+   },
+   "annotations": "open",
+   "description": "scalar",
+   "headers": "open",
+   "host": "scalar",
+   "input_schema": "open",
+   "method": "scalar",
+   "name": "scalar",
+   "output_schema": "open",
+   "parameters": "open",
+   "path": "scalar",
+   "query": "open",
+   "request_body": "open",
+   "responses": "open",
+   "scheme": "scalar"
+  },
+  "type": "scalar",
+  "upstream_url": "scalar"
+ },
+ "model_providers": {
+  "config": {
+   "auth": {
+    "access_key_id": "scalar",
+    "assume_role_arn": "scalar",
+    "aws_session_token": "scalar",
+    "batch_role_arn": "scalar",
+    "client_id": "scalar",
+    "client_secret": "scalar",
+    "headers": {
+     "name": "scalar",
+     "value": "scalar"
+    },
+    "metadata_url": "scalar",
+    "oauth_token_url": "scalar",
+    "params": {
+     "location": "scalar",
+     "name": "scalar",
+     "value": "scalar"
+    },
+    "role_session_name": "scalar",
+    "secret_access_key": "scalar",
+    "service_account_json": "scalar",
+    "session_token": "scalar",
+    "sts_endpoint_url": "scalar",
+    "tenant_id": "scalar",
+    "type": "scalar",
+    "use_gcp_service_account": "scalar",
+    "use_managed_identity": "scalar",
+    "workload_identity_federation": {
+     "auth_json": "scalar",
+     "aws_access_key_id": "scalar",
+     "aws_assume_role_arn": "scalar",
+     "aws_region": "scalar",
+     "aws_role_session_name": "scalar",
+     "aws_secret_access_key": "scalar",
+     "aws_session_token": "scalar",
+     "aws_sts_endpoint_url": "scalar",
+     "source": "scalar"
+    }
+   },
+   "foundry": {
+    "domain": "scalar",
+    "resource": "scalar"
+   },
+   "instance": "scalar",
+   "project_id": "scalar",
+   "service": "scalar"
+  },
+  "display_name": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "type": "scalar"
+ },
+ "models": {
+  "access": {
+   "acls": {
+    "allow": "scalar",
+    "deny": "scalar"
+   },
+   "auth_strategies": "scalar"
+  },
+  "capabilities": "scalar",
+  "config": {
+   "balancer": {
+    "": "open"
+   },
+   "logging": {
+    "audits": "scalar",
+    "max_payload_size": "scalar",
+    "payloads": "scalar",
+    "statistics": "scalar"
+   },
+   "max_request_body_size": "scalar",
+   "model": {
+    "name_header": "scalar"
+   },
+   "proxy": {
+    "auth": {
+     "password": "scalar",
+     "username": "scalar"
+    },
+    "http_proxy": {
+     "host": "scalar",
+     "port": "scalar"
+    },
+    "https_proxy": {
+     "host": "scalar",
+     "port": "scalar"
+    },
+    "no_proxy": "scalar",
+    "proxy_scheme": "scalar"
+   },
+   "response_streaming": "scalar",
+   "route": {
+    "destinations": {
+     "ip": "scalar",
+     "port": "scalar"
+    },
+    "headers": "open",
+    "hosts": "scalar",
+    "https_redirect_status_code": "scalar",
+    "methods": "scalar",
+    "model": {
+     "body": {
+      "body_param": "scalar"
+     },
+     "header": {
+      "header_param": "scalar"
+     },
+     "path": {
+      "path_param": "scalar"
+     },
+     "values": "scalar"
+    },
+    "name": "scalar",
+    "path_handling": "scalar",
+    "paths": "scalar",
+    "preserve_host": "scalar",
+    "protocols": "scalar",
+    "regex_priority": "scalar",
+    "request_buffering": "scalar",
+    "response_buffering": "scalar",
+    "snis": "scalar",
+    "sources": {
+     "ip": "scalar",
+     "port": "scalar"
+    },
+    "strip_path": "scalar",
+    "tags": "scalar"
+   }
+  },
+  "datastores": {
+   "name": "scalar",
+   "path": "scalar"
+  },
+  "display_name": "scalar",
+  "enabled": "scalar",
+  "formats": {
+   "type": "scalar"
+  },
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "policies": "scalar",
+  "targets": {
+   "allow_auth_override": "scalar",
+   "config": {
+    "": "open"
+   },
+   "name": "scalar",
+   "provider": "scalar",
+   "semantic_description": "scalar",
+   "weight": "scalar"
+  },
+  "type": "scalar"
+ },
+ "policies": {
+  "condition": "scalar",
+  "config": "open",
+  "datastores": {
+   "name": "scalar",
+   "path": "scalar"
+  },
+  "display_name": "scalar",
+  "enabled": "scalar",
+  "global": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "type": "scalar"
+ },
+ "snis": {
+  "certificate": "scalar",
+  "display_name": "scalar",
+  "hostname": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar"
+ },
+ "vaults": {
+  "config": "open",
+  "description": "scalar",
+  "id": "scalar",
+  "labels": "open",
+  "name": "scalar",
+  "type": "scalar"
+ }
+}

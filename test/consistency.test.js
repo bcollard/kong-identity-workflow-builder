@@ -40,7 +40,7 @@ const parsed = new Map();
 function view(s) {
   const r = render(X, s);
   const doc = yaml.load(r.cfg.decl.text);
-  const gw = doc.ai_gateways ? doc.ai_gateways[0] : null;
+  const gw = doc.ai_gateways ? doc.ai_gateways[0] : s.product === "ai" ? doc : null; // kongctl (Konnect) or flat deck ai sync file (self-managed)
   return { ...r, doc, gw };
 }
 for (const s of CLASSES) parsed.set(label(s), view(s));

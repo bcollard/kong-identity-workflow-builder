@@ -17,6 +17,7 @@ Terraform, lab badges, Konnect pruning) are reported as skipped when Konnect is 
 | `wizard.test.js` | Step visibility, disabled options and their reasons, pruning after an upstream change, no dead ends |
 | `outputs.test.js` | For each runtime class (~4.4k): YAML parses; every decK plugin matches the real Kong 3.16 / 3.15 plugin schema; kongctl files match `kongctl explain` and the AI Gateway 2.2 plugin schemas; curl JSON bodies parse; Terraform uses existing `konnect_*` resources |
 | `consistency.test.js` | On every path (~64k): the groups table equals the groups in the config, ACLs only reference declared groups, the identity record shows up in the config, sequence lanes match configured plugins, inspector and analytics agree, nothing 3.16-only for 3.15, tab rules, lab badges |
+| `deck-ai.test.js` | Self-managed AI Gateway 2.x: the file only uses fields `ai-deck-converter` reads (it ignores unknown keys silently), and converting it the way `deck ai sync` does gives no warnings, valid AI Gateway 2.2 plugins, the chosen auth plugin, the target plugin, subscription ACLs, token budgets, groups and consumer membership |
 | `render.test.js` | The real page in jsdom: the DOM shows what the logic computed (lanes, steps, KPIs, groups table, badge, every code tab), a full click-through, disabled options stay unselectable |
 
 Fixtures (`fixtures/`):
@@ -25,5 +26,11 @@ Fixtures (`fixtures/`):
   Known gaps handled in the test: `models` is exported as an empty object, `principals.match_consumer_groups` is missing,
   and nested items don't need `ai_gateway` (all three applied fine with kongctl 1.20.1 in the lab).
 - `terraform-resources.txt`: resource names from the `kong/konnect` and `kong/konnect-beta` provider docs.
+
+- `aigw-entity-model.fields.json`: YAML keys of the `deck ai sync` entity model, reflected from `ai-deck-converter`
+  (`cd test/tools/aigw-convert && go run . fields > ../../fixtures/aigw-entity-model.fields.json`).
+
+`tools/aigw-convert/` pins `ai-deck-converter` to the version decK 1.68 vendors (v0.19.7). The conversion test needs Go and is
+skipped without it; bump the version in `go.mod` when decK bumps it.
 
 `node test/classes.js` prints how many paths and runtime classes the wizard has.
