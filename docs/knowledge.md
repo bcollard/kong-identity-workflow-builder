@@ -76,6 +76,12 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   (runs after the proxy: priority −1000 < 819) reading `kong.client.get_jwt_token_payload()`; the strict sandbox has no
   `setmetatable` (use `cjson.empty_array`). A2A `message/send` carries no skill id, so trimming governs discovery only.
 - MCP tool ACLs can read a token claim directly: `acl_attribute_type: oauth_access_token` + `access_token_claim_field`.
+- Two file formats. Konnect: `kongctl apply` with an `ai_gateways: [{ref, …}]` wrapper and `ref` on every entity.
+  Self-managed: `deck ai sync` reads the flat entity model of `ai-deck-converter` (top-level `models`, `agents`,
+  `mcp_servers`, `auth_strategies`, `policies`, `consumers`, `consumer_groups`, `model_providers`), with group membership
+  listed on each consumer and passthrough MCP servers using top-level `upstream_url`. The converter ignores unknown keys,
+  so a kongctl file given to `deck ai sync` becomes an empty config. Preview the lowered config with
+  `deck file ai2kong -s aigw.yaml`.
 
 ## AI Gateway 1.x (Kong Gateway + AI plugins)
 
