@@ -1,5 +1,7 @@
 # kong-identity-workflow-builder
 
+Read `docs/knowledge.md` (verified product facts behind every wizard rule) and `docs/backlog.md` (what's untested or missing) before changing the wizard.
+
 - Everything ships from `site/`; `site/index.html` is the whole app (no framework, no build). Keep it self-contained:
   fonts from Google Fonts only, no other external scripts.
 - `test/harness.js` evaluates the app's script up to `/* ---------- result rendering` and walks every answer path.
