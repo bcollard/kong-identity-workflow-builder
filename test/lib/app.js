@@ -1,0 +1,64 @@
+// Load the wizard's pure logic (everything above "result rendering") from site/index.html into a VM context.
+const fs = require("fs");
+const vm = require("vm");
+const path = require("path");
+
+const PAGE = path.join(__dirname, "../../site/index.html");
+const MARKER = "/* ---------- result rendering";
+const EXPORTS = "S,STEPS,IDP,WHO,visibleSteps,prune,derive,buildSeq,genDeclarative,genApi,genTf,labMatch,outputTabs";
+
+function pageHtml() { return fs.readFileSync(PAGE, "utf8"); }
+
+function loadLogic() {
+  const html = pageHtml();
+  let js = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"));
+  const cut = js.indexOf(MARKER);
+  if (cut < 0) throw new Error("result rendering marker not found");
+  js = js.slice(0, cut);
+  const ctx = vm.createContext({ console });
+  vm.runInContext(`${js}\nthis.API={${EXPORTS}};`, ctx);
+  return ctx.API;
+}
+
+const subsets = a => a.reduce((acc, x) => acc.concat(acc.map(s => [...s, x])), [[]]).filter(s => s.length);
+
+/** Every complete answer set the wizard allows (respects visibility and disabled options). */
+function allPaths(X) {
+  const out = [], S = X.S;
+  const blank = JSON.stringify(S);
+  (function walk(i) {
+    const vs = X.visibleSteps();
+    if (i >= vs.length) { out.push(JSON.parse(JSON.stringify(S))); return; }
+    const st = vs[i], opts = st.options(S).filter(o => !o.disabled).map(o => o.v);
+    const choices = st.multi ? [...(opts.includes("none") ? [["none"]] : []), ...subsets(opts.filter(v => v !== "none"))] : opts;
+    const saved = JSON.stringify(S);
+    for (const c of choices) { Object.assign(S, JSON.parse(saved)); S[st.id] = c; walk(i + 1); }
+    Object.assign(S, JSON.parse(saved));
+  })(0);
+  Object.assign(S, JSON.parse(blank));
+  return out;
+}
+
+/** One representative per runtime class: analytics choices collapsed, everything else kept. */
+const CORE = ["product", "deploy", "version", "caller", "target", "cred", "idp", "record", "access"];
+function runtimeClasses(paths) {
+  const m = new Map();
+  for (const p of paths) {
+    const k = CORE.map(f => p[f] ?? "-").join("|") + "|" + [...p.plans].sort().join("+");
+    // prefer the representative with the most analytics, so analytics-driven plugins are exercised too
+    if (!m.has(k) || p.analytics.length > m.get(k).analytics.length) m.set(k, p);
+  }
+  return [...m.values()];
+}
+
+/** Render all outputs for one answer set. */
+function render(X, state) {
+  Object.assign(X.S, JSON.parse(JSON.stringify(state)));
+  const d = X.derive(X.S), seq = X.buildSeq(X.S, d);
+  const cfg = { decl: X.genDeclarative(X.S, d), api: X.genApi(X.S, d), tf: X.genTf(X.S, d) };
+  return { s: JSON.parse(JSON.stringify(X.S)), d, seq, cfg, tabs: X.outputTabs(X.S, cfg), lab: X.labMatch(X.S) };
+}
+
+const label = s => CORE.map(f => s[f] ?? "-").join("/") + "/" + s.plans.join("+") + "/" + s.analytics.join("+");
+
+module.exports = { loadLogic, allPaths, runtimeClasses, render, label, pageHtml, PAGE };

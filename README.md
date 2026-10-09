@@ -20,11 +20,11 @@ No build step and no server code: `site/index.html` is plain HTML, CSS and JavaS
 
 ```bash
 make serve   # http://localhost:8080
-make test    # walk every answer path (≈32k) through the generators with Node
+npm ci && npm test   # wizard rules, real-schema validation, cross-panel consistency, jsdom render (see test/README.md)
 node test/sample.js '{"product":"api","deploy":"konnect","caller":"portal","cred":"cc","idp":"okta","record":"portalapp","access":"portal","plans":["pkg"],"analytics":["konnect"]}'   # print one blueprint
 ```
 
 ## Deploy
 
-Pushing to `main` runs `.github/workflows/pages.yaml`: the path harness, then a GitHub Pages deployment of `site/`.
+Pushing to `main` runs `.github/workflows/pages.yaml`: the test suite, then a GitHub Pages deployment of `site/`.
 Enable Pages once with **Settings → Pages → Source: GitHub Actions**.

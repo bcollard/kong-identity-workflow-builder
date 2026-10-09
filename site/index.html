@@ -489,7 +489,8 @@ function buildSeq(s,d){
   if(d.pr) lanes.push(L("dir","KI directory","principals","store"));
   const authLabel=d.auth.plugin;
   lanes.push(L("auth",authLabel,d.ai?"AuthStrategy":d.auth.mode==="principals"?"principals mode":"plugin","plugin"));
-  if(s.access&&s.access!=="none") lanes.push(L("acl","acl",s.access==="meta"?"allow_when":s.access==="claimacl"?"groups claim":"sub-CG","plugin"));
+  const mcpToolAcl = d.ai1 && s.target==="mcp" && s.access && s.access!=="none";   // 1.x MCP: ai-mcp-proxy enforces default_acl itself
+  if(s.access&&s.access!=="none"&&!mcpToolAcl) lanes.push(L("acl","acl",s.access==="meta"?"allow_when":s.access==="claimacl"?"groups claim":"sub-CG","plugin"));
   const rl=[];
   if(d.plans.includes("llm")) rl.push(L("rla","ai-rate-limit-adv","token budget","plugin"));
   if(d.plans.includes("tier-cg")||d.plans.includes("tier-meta")) rl.push(L("rla","rate-limiting-adv","API plan","plugin"));
@@ -534,6 +535,7 @@ function buildSeq(s,d){
       steps.push({f:"px",t:"post",l:"skills ∩ jwt.allowed_skills",h:"Skill trimming",p:"Discovery governance only: A2A calls carry no skill id."});
       steps.push({f:"post",t:"c",l:"trimmed card",h:"The caller sees what it may use",p:""});
     } else {
+      if(mcpToolAcl) steps.push({f:"px",t:"px",l:s.access==="claimacl"?`tool ACL from .${d.idp.groups} claim ✓`:`tool ACL allow [${d.tgt.sub}] ✓`,h:"Tool-level access",p:"ai-mcp-proxy filters tools/list and rejects tools/call for tools the caller may not use.",set:{decision:"tool ACL: allowed"}});
       steps.push({f:"px",t:"up",l:s.target==="models"?"chat completion":"tools/call",h:"Upstream call",p:s.target==="models"?"Provider key injected by the gateway.":"Tool-level ACLs filter tools/list and tools/call."});
       steps.push({f:"up",t:"c",l:"200 OK",h:"Response",p:""});
     }
@@ -565,12 +567,12 @@ plugins:
     config: { match_policy: if_present }
 ${rl&&!d.co?`  - name: rate-limiting-advanced        # per-application plan (principal ID = application ID)
     condition: 'principal.id == "<application id>"'
-    config: { identifier: principal, limit: [1000], window_size: [3600], window_type: fixed }
+    config: { identifier: ${gw316(s)?"principal":"credential"}, limit: [1000], window_size: [3600], window_type: fixed }
 `:""}${(s.analytics||[]).includes("prom")?`  - name: prometheus
     config: { status_code_metrics: true, latency_metrics: true }
 `:""}${(s.analytics||[]).includes("otel")?`  - name: opentelemetry
     config:
-      metrics: { endpoint: http://otel-collector:4318/v1/metrics, enable_request_metrics: true, enable_principal_attribute: true }
+      metrics: { endpoint: http://otel-collector:4318/v1/metrics, enable_request_metrics: true${gw316(s)?", enable_principal_attribute: true":""} }
 `:""}`};
 }
 function genDeclarativeAI1(s,d){
@@ -613,7 +615,7 @@ ${auth}${acl}
             - route_type: llm/v1/chat
               auth: { header_name: Authorization, header_value: "Bearer {vault://env/openai-key}" }
               model: { provider: openai, name: gpt-4.1 }
-          logging: { log_statistics: true, log_payloads: false }`;
+              logging: { log_statistics: true, log_payloads: false }`;
   else if(s.target==="a2a") svc=`  - name: agent-${d.tgt.name}
     url: http://kongair-agent.internal:10000/
     routes: [{ name: ${d.tgt.name}, paths: [/agents/${d.tgt.name}] }]
@@ -651,7 +653,9 @@ function genDeclarative(s,d){
   const iss = d.idp?d.idp.issuer:"";
   if(d.ai){
     const strat = d.auth.plugin==="openid-connect"
-      ? `  - name: ${s.caller}-auth
+      ? `  - ref: ${s.caller}-auth
+    name: ${s.caller}-auth
+    display_name: ${WHO[s.caller].label}s
     type: openid-connect
     config:
       issuer: ${iss}/.well-known/openid-configuration
@@ -659,18 +663,25 @@ function genDeclarative(s,d){
       audience_required: [kong-gateway]
 ${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim: [${d.idp.groups}]\n      consumer_groups_optional: false\n`:""}${d.co?`      consumer_claims: [[${d.credClaim||"sub"}]]\n      consumer_by: [custom_id]\n`:""}${d.pr?`      principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}      cache_tokens_salt: change-me
       ssl_verify: true`
-      : `  - name: ${s.caller}-keys
+      : `  - ref: ${s.caller}-keys
+    name: ${s.caller}-keys
+    display_name: ${WHO[s.caller].label} API keys
     type: key-auth
     config:
       key_names: [apikey]
 ${d.pr?"      principals: { enabled: true, directory: default, error_on_miss: true }":"      hide_credentials: true"}`;
-    const cgs = d.groups.map(g=>`  - { name: ${g.name}, display_name: "${g.kind} · ${g.owner}" }`).join("\n");
+    // AI Consumers can't list groups: membership is declared on the group (consumers: [refs])
+    const cgs = d.groups.map(g=>`  - { ref: ${g.name}, name: ${g.name}, display_name: "${g.kind} · ${g.owner}"${d.co?`, consumers: [${d.who.name}]`:""} }`).join("\n");
     const cons = d.co?`    consumers:
-      - name: ${d.who.name}
+      - ref: ${d.who.name}
+        name: ${d.who.name}
+        display_name: ${d.who.name}
         type: ${d.auth.plugin==="key-auth"?"api-key":"oauth"}
-${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} value>"\n`}        consumer_groups: ${yamlList(d.groups.map(g=>g.name))}\n`:"";
+${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} value>"\n`}`:"";
     const pol=[];
-    if(d.plans.includes("llm")) pol.push(`  - name: llm-usage-plans          # global · AI team
+    if(d.plans.includes("llm")) pol.push(`  - ref: llm-usage-plans          # global · AI team
+    name: llm-usage-plans
+    display_name: LLM usage plans
     type: ai-rate-limiting-advanced
     global: true
     config:
@@ -681,16 +692,20 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
                   { type: credential, partition_by: true }]
           window_type: fixed
           limits: [{ limit: 10000, window_size: 3600 }]`);
-    if(s.target==="a2a") pol.push(`  - name: trim-agent-card          # skill allowance from the JWT claim allowed_skills
+    if(s.target==="a2a") pol.push(`  - ref: trim-agent-card          # skill allowance from the JWT claim allowed_skills
+    name: trim-agent-card
+    display_name: Trim agent card skills
     type: post-function
     config:
       header_filter: ['kong.response.clear_header("Content-Length")']
       body_filter: ['<trim-agent-card.lua>']`);
-    if((s.analytics||[]).includes("prom")) pol.push(`  - name: metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
+    if((s.analytics||[]).includes("prom")) pol.push(`  - ref: metrics\n    name: metrics\n    display_name: Metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
     const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`:"";
     let ent;
     if(s.target==="models") ent=`    models:
-      - name: ${d.tgt.name}
+      - ref: ${d.tgt.name}
+        name: ${d.tgt.name}
+        display_name: ${d.tgt.name}
         type: model
         capabilities: [generate]
         formats: [{ type: openai }]
@@ -698,16 +713,25 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
         targets: [{ name: gpt-4.1, provider: openai, config: { type: openai } }]
         access: { auth_strategies: [${d.auth.plugin==="openid-connect"?s.caller+"-auth":s.caller+"-keys"}]${allow} }`;
     else if(s.target==="a2a") ent=`    agents:
-      - name: ${d.tgt.name}
+      - ref: ${d.tgt.name}
+        name: ${d.tgt.name}
+        display_name: ${d.tgt.name}
         type: a2a
         config: { url: http://kongair-agent.internal:10000/, route: { paths: [/agents/${d.tgt.name}] }, logging: { statistics: true } }
         access: { auth_strategies: [${s.caller}-auth]${allow} }
         policies: [trim-agent-card]`;
     else ent=`    mcp_servers:
-      - name: ${d.tgt.name}
-        type: proxy
+      - ref: ${d.tgt.name}
+        name: ${d.tgt.name}
+        display_name: ${d.tgt.name}
+        type: passthrough-listener
         config: { url: https://mcp.github.example/mcp, route: { paths: [/mcp/github] } }
-        access: { auth_strategies: [${s.caller}-auth]${s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`:""} }${s.access==="claimacl"?`\n        # tool ACLs from the token: acl_attribute_type: oauth_access_token, access_token_claim_field: .${d.idp.groups}`:""}`;
+        access:
+          auth_strategies: [${s.caller}-auth]
+          acl_attribute_type: ${s.access==="claimacl"?"oauth_access_token":"consumer"}${s.access==="subcg"?`
+          acls: { allow: [${d.tgt.sub}] }`:""}${s.access==="claimacl"?`
+          access_token_claim_field: .${d.idp.groups}
+          default_tool_acls: { allow: [${d.tgt.name}-users] }`:""}`;
     return {lang:"yaml",title:s.deploy==="konnect"?"kongctl apply -f aigw.yaml":"deck ai sync aigw.yaml",text:`${s.deploy==="konnect"?"# kongctl apply -f aigw.yaml":"# deck ai sync (self-managed)"}
 ai_gateways:
   - ref: aigw
@@ -721,8 +745,8 @@ ${cgs?`    consumer_groups:\n${cgs.replace(/^/gm,"  ")}\n`:""}${cons}${pol.lengt
   const cg=[];
   for(const g of d.groups){
     let plug="";
-    if(g.kind==="tier"&&g.owner==="API owner") plug=`\n    plugins:\n      - name: rate-limiting-advanced\n        config: { identifier: ${d.pr?"principal":d.cl?"credential":"consumer"}, limit: [100], window_size: [5], window_type: fixed, strategy: local, namespace: ${g.name} }`;
-    if(g.owner==="Org admin"&&g.kind==="tier") plug=`\n    plugins:\n      - name: rate-limiting\n        config: { minute: 200, limit_by: ${d.pr?"principal":d.cl?"credential":"consumer"}, policy: local }`;
+    if(g.kind==="tier"&&g.owner==="API owner") plug=`\n    plugins:\n      - name: rate-limiting-advanced\n        config: { identifier: ${d.pr&&gw316(s)?"principal":d.pr||d.cl?"credential":"consumer"}, limit: [100], window_size: [5], window_type: fixed, strategy: local, namespace: ${g.name} }`;
+    if(g.owner==="Org admin"&&g.kind==="tier") plug=`\n    plugins:\n      - name: rate-limiting\n        config: { minute: 200, limit_by: ${d.pr&&gw316(s)?"principal":d.pr||d.cl?"credential":"consumer"}, policy: local }`;
     cg.push(`  - name: ${g.name}            # ${g.kind} · ${g.owner}${plug}`);
   }
   const authPlug = d.auth.plugin==="openid-connect"?`      - name: openid-connect
@@ -748,7 +772,7 @@ ${d.pr?"          identity_realms: []\n          principals: { enabled: true, di
     config: { minute: 60, limit_by: principal, policy: local }
     expressions: { minute: principal.metadata.bu_rl_minute }`);
   if((s.analytics||[]).includes("prom")) glob.push(`  - name: prometheus\n    config: { status_code_metrics: true, latency_metrics: true }\n  - name: http-log                   # identity labels for Grafana (Vector log_to_metric)\n    config:\n      http_endpoint: http://vector.observability:8686/\n      custom_fields_by_lua:\n        user: "local c = kong.client.get_credential(); return c and c.id"\n        bu: "local gs = kong.client.get_consumer_groups() or {}; for _, g in ipairs(gs) do if g.name:sub(1,3) == 'bu-' then return g.name end end"`);
-  if((s.analytics||[]).includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, push_interval: 5, enable_request_metrics: true${d.pr?", enable_principal_attribute: true":""} }`);
+  if((s.analytics||[]).includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, push_interval: 5, enable_request_metrics: true${d.pr&&gw316(s)?", enable_principal_attribute: true":""} }`);
   const consumers = d.co?`consumers:\n  - username: ${d.who.name}\n${d.auth.plugin==="key-auth"?"    keyauth_credentials: [{ key: \"<generated>\" }]\n":`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${d.groups.length?`    groups: [${d.groups.map(g=>`{ name: ${g.name} }`).join(", ")}]\n`:""}`:"";
   return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-apis":""}
 _format_version: "3.0"
@@ -903,7 +927,7 @@ resource "konnect_gateway_plugin_ace" "portal_access" {
   if(d.plans.includes("app-cond")&&!d.co) t.push(`resource "konnect_gateway_plugin_rate_limiting_advanced" "per_app" {
   control_plane_id = "<control plane id>"
   condition        = "principal.id == \\"<application id>\\""
-  config           = { identifier = "principal", limit = [1000], window_size = [3600], window_type = "fixed" }
+  config           = { identifier = "${gw316(s)?"principal":"credential"}", limit = [1000], window_size = [3600], window_type = "fixed" }
 }`);
   return {lang:"hcl",title:"Terraform",text:t.join("\n\n")};
 }
@@ -1084,18 +1108,21 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
     if(d.plans.includes("tier-cg")) t.push(`resource "konnect_gateway_plugin_rate_limiting_advanced" "tier_bronze" {
   control_plane_id = konnect_gateway_control_plane.acme.id
   consumer_group   = { id = konnect_gateway_consumer_group.tier_bronze.id }
-  config = { identifier = "${d.pr?"principal":"credential"}", limit = [100], window_size = [5], window_type = "fixed", strategy = "local", namespace = "tier-bronze" }
+  config = { identifier = "${d.pr&&gw316(s)?"principal":"credential"}", limit = [100], window_size = [5], window_type = "fixed", strategy = "local", namespace = "tier-bronze" }
 }`);
     if(d.plans.includes("bu-cg")) t.push(`resource "konnect_gateway_plugin_rate_limiting" "bu_${d.who.bu}" {
   control_plane_id = konnect_gateway_control_plane.acme.id
   consumer_group   = { id = konnect_gateway_consumer_group.bu_${d.who.bu}.id }
-  config           = { minute = 200, limit_by = "${d.pr?"principal":"credential"}", policy = "local" }
+  config           = { minute = 200, limit_by = "${d.pr&&gw316(s)?"principal":"credential"}", policy = "local" }
 }`);
     if(d.plans.includes("tier-meta")||d.plans.includes("bu-meta")) t.push(`# Plugin "expressions" (limits read from principal metadata) are 3.16 features:
 # check that your provider version exposes them, or manage those two plugins with decK.`);
   }
   return {lang:"hcl",title:"Terraform",text:t.join("\n\n")};
 }
+
+/* Output tabs: Terraform targets Konnect only; the Konnect API tab only shows when there is something to call. */
+function outputTabs(s,cfg){ return ["decl",...(/Nothing to call/.test(cfg.api.text)?[]:["api"]),...(s.deploy==="konnect"?["tf"]:[])]; }
 
 /* ---------- result rendering ---------- */
 let seq=null, step=0, timer=null, playing=false, tab="decl";
@@ -1147,8 +1174,7 @@ function renderResult(){
   r.hidden=false; const d=derive(S); seq=buildSeq(S,d);
   const lab=labMatch(S);
   const CFG={decl:genDeclarative(S,d),api:genApi(S,d),tf:genTf(S,d)};
-  // Terraform targets Konnect only; the Konnect API tab only shows when there is something to call.
-  const tabs=["decl",...(/Nothing to call/.test(CFG.api.text)?[]:["api"]),...(S.deploy==="konnect"?["tf"]:[])];
+  const tabs=outputTabs(S,CFG);
   if(!tabs.includes(tab)) tab="decl";
   const summary=[
     ["Product",`${S.product==="ai"?"AI Gateway 2.2":S.product==="ai1"?`Kong Gateway ${S.version} + AI plugins (AI Gateway 1.x)`:`Kong Gateway ${S.version}`} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
