@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Pick a product, a caller, a credential and an IdP: get a Kong identity blueprint with consumer groups, plugins, analytics, an animated sequence and kongctl/decK, Konnect API and Terraform config.">
+<title>Identity Workflow Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Funnel+Sans:wght@300;400;700;800&family=Roboto+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: three-column builder (stepper · question · live blueprint), full-width result below once every answer is in. */
+:root{
+  --bg:#001408; --surface:#06200f; --raised:#0b2a16; --line:#2a3a1c; --cross:#54660a;
+  --fg:#e7ede5; --muted:#a1a69f; --faint:#4a4d49;
+  --accent:#ccff00; --accent-text:#ccff00; --accent-ink:#001408; --accent-soft:#ccff0022;
+  --node:#4a4d49; --node-text:#ffffff; --focal:#ffffff; --focal-text:#000f06;
+  --ok:#7ee08a; --bad:#ff7a6b; --warn:#ffc857; --add-bg:#ccff0026; --del-bg:#ff7a6b22;
+  --display:"Funnel Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Roboto Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#e7ede5; --surface:#ffffff; --raised:#f3f6f1; --line:#c5ccc1; --cross:#4b4e46;
+  --fg:#101110; --muted:#4a4d49; --faint:#b7bdb5;
+  --accent:#ccff00; --accent-text:#3a4a00; --accent-ink:#001408; --accent-soft:#ccff0055;
+  --node:#2d2e2c; --node-text:#ffffff; --focal:#001408; --focal-text:#ccff00;
+  --ok:#1e7a2e; --bad:#b3261e; --warn:#8a5a00; --add-bg:#ccff0066; --del-bg:#b3261e1a; color-scheme:light;}}
+:root[data-theme="light"]{
+  --bg:#e7ede5; --surface:#ffffff; --raised:#f3f6f1; --line:#c5ccc1; --cross:#4b4e46;
+  --fg:#101110; --muted:#4a4d49; --faint:#b7bdb5;
+  --accent:#ccff00; --accent-text:#3a4a00; --accent-ink:#001408; --accent-soft:#ccff0055;
+  --node:#2d2e2c; --node-text:#ffffff; --focal:#001408; --focal-text:#ccff00;
+  --ok:#1e7a2e; --bad:#b3261e; --warn:#8a5a00; --add-bg:#ccff0066; --del-bg:#b3261e1a; color-scheme:light;}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--display);font-size:15px;line-height:1.5}
+.wrap{max-width:1320px;margin:0 auto;padding-inline:20px;padding-block:22px 64px;display:flex;flex-direction:column;gap:22px}
+header.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:16px}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-text)}
+h1{font-size:clamp(26px,4vw,40px);line-height:1.05;margin:4px 0 6px;font-weight:800;text-wrap:balance}
+.lede{color:var(--muted);margin:0;max-width:70ch}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,.opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{font:700 13px/1 var(--display);border:1px solid var(--cross);background:var(--raised);border-radius:999px;padding:10px 16px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.builder{display:grid;grid-template-columns:230px minmax(0,1fr) 330px;gap:16px;align-items:start}
+@media (max-width:1100px){.builder{grid-template-columns:minmax(0,1fr) 300px}.stepper{grid-column:1/-1}}
+@media (max-width:760px){.builder{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;min-width:0}
+.stepper{padding:10px;display:flex;flex-direction:column;gap:2px;position:sticky;top:env(safe-area-inset-top,0px)}
+@media (max-width:1100px){.stepper{position:static;flex-direction:row;flex-wrap:wrap}}
+.stepper button{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;text-align:left;border:0;background:transparent;border-radius:6px;padding:8px}
+.stepper button[aria-current="step"]{background:var(--accent-soft)}
+.stepper button[disabled]{opacity:.35;cursor:default}
+.stepper .dot{width:22px;height:22px;border-radius:999px;border:1px solid var(--cross);display:grid;place-items:center;font:700 11px/1 var(--mono)}
+.stepper .done .dot{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.stepper .t{font-weight:700;font-size:13px;line-height:1.25}
+.stepper .v{display:block;font-size:11.5px;color:var(--muted);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.question{padding:20px;display:flex;flex-direction:column;gap:16px}
+.question h2{margin:0;font-size:22px;font-weight:800;text-wrap:balance}
+.question .ask{margin:0;color:var(--muted);max-width:70ch}
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:10px}
+.opt{border:1px solid var(--cross);background:var(--raised);border-radius:8px;padding:14px;text-align:left;display:flex;flex-direction:column;gap:6px;min-height:100%}
+.opt .l{font-weight:700;font-size:15px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.opt .s{font-size:12.5px;color:var(--muted);line-height:1.4}
+.opt .ex{font:400 11px/1.4 var(--mono);color:var(--accent-text)}
+.opt[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 16px var(--accent-soft);background:var(--accent-soft)}
+.opt[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
+.opt .why{font-size:12px;color:var(--warn)}
+.tag{font:700 10px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:4px 7px;border:1px solid var(--cross);color:var(--muted)}
+.tag.rec{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.tag.nocg{color:var(--ok);border-color:var(--ok)}
+.tag.cg{color:var(--warn);border-color:var(--warn)}
+.help{border-left:2px solid var(--cross);padding:4px 0 4px 12px;color:var(--muted);font-size:13px;max-width:80ch}
+.help b{color:var(--fg)}
+.nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.nav .sp{flex:1}
+.blueprint{padding:16px;display:flex;flex-direction:column;gap:14px;position:sticky;top:env(safe-area-inset-top,0px)}
+@media (max-width:760px){.blueprint{position:static}}
+.blueprint h3,.res h3{margin:0;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kpi{border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--raised)}
+.kpi b{display:block;font:700 20px/1.1 var(--display);font-variant-numeric:tabular-nums}
+.kpi span{font-size:11px;color:var(--muted)}
+.kpi.good b{color:var(--ok)} .kpi.warn b{color:var(--warn)}
+ul.plain{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13px}
+ul.plain li{display:flex;gap:8px;align-items:baseline}
+ul.plain li::before{content:"";flex:0 0 6px;height:6px;margin-top:6px;background:var(--accent);border-radius:1px}
+ul.warns li::before{background:var(--warn)}
+code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
+.res{display:flex;flex-direction:column;gap:16px}
+.res-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.res-head h2{margin:0;font-size:24px;font-weight:800}
+.badge{font:700 11px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:7px 11px}
+.badge.ok{background:var(--accent);color:var(--accent-ink)}
+.badge.draft{border:1px solid var(--warn);color:var(--warn)}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:980px){.stage{grid-template-columns:minmax(0,1fr)}}
+.diagram{overflow-x:auto;padding:8px 8px 0}
+.diagram svg{display:block;width:100%;height:auto}
+.caption{border-top:1px solid var(--line);padding:12px 16px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px}
+.stepno{font:700 12px/1 var(--mono);color:var(--accent-ink);background:var(--accent);border-radius:999px;padding:6px 10px;white-space:nowrap;font-variant-numeric:tabular-nums;align-self:start}
+.caption h4{margin:0 0 2px;font-size:16px}
+.caption p{margin:0;color:var(--muted)}
+.ctl{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px}
+.inspector{padding:14px;display:flex;flex-direction:column;gap:8px}
+.kv{display:flex;flex-direction:column;gap:8px;margin:0}
+.kv div{border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:var(--raised)}
+.kv div.changed{border-color:var(--accent);background:var(--accent-soft)}
+.kv dt{font:700 10px/1.2 var(--mono);letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.kv dd{margin:3px 0 0;font:400 12px/1.45 var(--mono);white-space:pre-wrap;word-break:break-word}
+.kv dd.none{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}
+.grid2 .panel{padding:16px;display:flex;flex-direction:column;gap:10px}
+.tablebox{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.kind{font:700 10px/1 var(--mono);padding:4px 7px;border-radius:999px;border:1px solid var(--cross);white-space:nowrap}
+.kind.sub{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.kind.tier{color:var(--accent-text)} .kind.bu{color:var(--muted)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:0 12px}
+.tabs button{border:0;background:transparent;padding:10px 12px;font-weight:700;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.codewrap{position:relative;padding:12px}
+pre.code{margin:0;font:400 12px/1.55 var(--mono);background:var(--raised);border:1px solid var(--line);border-radius:4px;padding:12px;overflow:auto;max-height:560px;white-space:pre}
+pre.code .c{color:var(--muted)}
+.copy{position:absolute;top:20px;right:22px}
+.empty{color:var(--muted);text-align:center;padding:28px 16px}
+.msg line,.msg path{stroke:var(--fg);stroke-width:1.4;fill:none}
+.msg text{fill:var(--fg);font:400 11px var(--display)}
+.msg.future{opacity:.13}
+.msg.current line,.msg.current path{stroke:var(--accent);stroke-width:2.4}
+.msg.current text{fill:var(--accent-text);font-weight:700}
+.lane{stroke:var(--cross);stroke-dasharray:3 5}
+.band{fill:var(--accent-soft);stroke:var(--accent);stroke-dasharray:6 4}
+.bandl{fill:var(--accent-text);font:700 10px var(--display);letter-spacing:.12em}
+.hd.actor rect{fill:var(--focal)} .hd.actor text{fill:var(--focal-text)}
+.hd.idp rect,.hd.store rect{fill:var(--node)} .hd.idp text,.hd.store text{fill:var(--node-text)}
+.hd.plugin rect{fill:var(--accent)} .hd.plugin text{fill:var(--accent-ink)}
+.hd.upstream rect{fill:var(--surface);stroke:var(--accent)} .hd.upstream text{fill:var(--fg)}
+.hd .l1{font:700 11px var(--display)} .hd .l2{font:400 9.5px var(--mono);opacity:.85}
+#ah path{fill:var(--fg)} #aha path{fill:var(--accent)}
+.packet{fill:var(--accent)}
+footer{color:var(--muted);font-size:12px}
+</style>
+<style>html,body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <span class="eyebrow">Kong Gateway 3.16 · AI Gateway 2.2 · Kong Identity</span>
+      <h1>Identity Workflow Builder</h1>
+      <p class="lede">Answer a few questions about who calls your gateway. The builder works out where identities and groups live, which Consumer Groups you really need, and generates the sequence, the config and the analytics plan.</p>
+    </div>
+    <div class="nav">
+      <button class="btn" id="b-reset">Start over</button>
+      <button class="btn" id="b-sample">Load an example</button>
+    </div>
+  </header>
+
+  <div class="builder">
+    <nav class="panel stepper" id="stepper" aria-label="Steps"></nav>
+    <section class="panel question" id="question" aria-live="polite"></section>
+    <aside class="panel blueprint" id="blueprint" aria-label="Live blueprint"></aside>
+  </div>
+
+  <section class="res" id="result" hidden></section>
+
+  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test.</footer>
+</div>
+
+<script>
+/* ---------- reference data ---------- */
+const IDP = {
+  ki:{label:"Kong Identity",ex:"Konnect auth server",issuer:"https://<sub>.us.identity.konghq.com/auth",user:null,app:"sub",groups:"groups",
+      note:"Machine tokens (client_credentials). Group claims can be templated from client labels; principals live in the same Konnect region."},
+  okta:{label:"Okta",ex:"Okta Workforce Identity · custom authorization server",issuer:"https://acme.okta.com/oauth2/aus1default",user:"sub",app:"sub",groups:"groups",
+      note:"The groups claim needs a custom authorization server with a groups filter."},
+  entra:{label:"Microsoft Entra ID",ex:"Entra ID v2.0 endpoint (Azure AD)",issuer:"https://login.microsoftonline.com/<tenant-id>/v2.0",user:"preferred_username",app:"azp",groups:"roles",
+      note:"The groups claim carries object IDs, so map app roles to the roles claim and name groups after the roles."},
+  keycloak:{label:"Keycloak",ex:"Keycloak · Red Hat build of Keycloak",issuer:"https://keycloak.example.com/realms/acme",user:"preferred_username",app:"azp",groups:"groups",
+      note:"Add a group membership mapper with full path off, plus an audience mapper."},
+  adfs:{label:"AD FS",ex:"Active Directory Federation Services 2016+",issuer:"https://adfs.example.com/adfs",user:"upn",app:"appid",groups:"group",
+      note:"Add an issuance transform rule (Token-Groups, unqualified names → group). A single group arrives as a string, which the plugin accepts."}
+};
+const WHO = {
+  employees:{name:"alice",label:"Employee",sub:"Claude Code · web app",bu:"finance"},
+  apps:{name:"invoice-bot",label:"Client app",sub:"service",bu:"finance"},
+  agents:{name:"travel-planner",label:"AI agent",sub:"A2A client",bu:"travel"}
+};
+
+/* ---------- wizard definition ---------- */
+const S = {product:null,deploy:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]};
+const isAI = s=>s.product==="ai";
+const oidcLike = s=>s.cred==="oidc"||s.cred==="cc";
+
+const STEPS = [
+ {id:"product",title:"Product",ask:"Which gateway receives the calls?",options:s=>[
+   {v:"api",label:"API Gateway",s:"REST/gRPC APIs on Kong Gateway 3.16",ex:"services · routes · plugins"},
+   {v:"ai",label:"AI Gateway",s:"LLMs, A2A agents and MCP servers on AI Gateway 2.2",ex:"models · agents · auth strategies · policies"}]},
+ {id:"deploy",title:"Control plane",ask:"Where is the control plane?",help:s=>"<b>Kong Identity principals</b> are stored in a Konnect directory and looked up by Konnect-connected data planes only. A self-managed control plane can still validate Kong Identity tokens as a plain OIDC issuer.",options:s=>[
+   {v:"konnect",label:"Konnect",s:"Hybrid or dedicated cloud data planes",tag:"rec",tagText:"Recommended"},
+   {v:"self",label:"Self-managed",s:isAI(s)?"AI Gateway entities applied with deck ai sync or the AI Manager UI":"Kong Gateway with its own control plane"}]},
+ {id:"caller",title:"Who calls",ask:"Who authenticates to the gateway?",options:s=>[
+   {v:"employees",label:"Employees",s:"Humans with a corporate account",ex:"IDE, chat UI, internal portal"},
+   {v:"apps",label:"Apps",s:"Services and scripts with their own credentials",ex:"back-office jobs, partner apps"},
+   {v:"agents",label:"Agents",s:"AI agents acting as themselves",ex:"A2A clients, autonomous workers"}]},
+ {id:"target",title:"Target",ask:"What do they call on the AI Gateway?",visible:isAI,options:s=>[
+   {v:"models",label:"LLM models",s:"Chat, embeddings, Responses",ex:"Model → ai-proxy-advanced"},
+   {v:"a2a",label:"A2A agents",s:"Remote agents behind the gateway",ex:"Agent → ai-a2a-proxy"},
+   {v:"mcp",label:"MCP servers",s:"Tools exposed over MCP",ex:"MCP server → ai-mcp-proxy"}]},
+ {id:"cred",title:"Credential",ask:"How do they prove who they are?",options:s=>{
+   if(s.caller==="employees") return [
+     {v:"oidc",label:"OIDC login",s:"Interactive sign-in at the corporate IdP (authorization code, device code)",ex:"Okta · Entra ID · Keycloak · AD FS",tag:"rec",tagText:"Recommended"},
+     {v:"apikey",label:"API keys",s:"A personal key per employee",ex:"key-auth",why:"Shared secrets for humans don't follow leavers or MFA. Use only for tooling that can't do OAuth."}];
+   return [
+     {v:"cc",label:"OAuth client credentials",s:"A client ID and secret exchanged for a short-lived JWT",ex:"Kong Identity · Okta · Entra ID · Keycloak · AD FS",tag:"rec",tagText:"Recommended"},
+     {v:"apikey",label:"API keys",s:"A long-lived key sent on every call",ex:"key-auth",why:s.caller==="agents"?"Agents should use short-lived tokens. Keep keys for legacy clients.":null}];
+ }},
+ {id:"idp",title:"OAuth server",ask:"Which server issues the tokens?",visible:oidcLike,help:s=>s.idp?IDP[s.idp].note:"Pick the issuer. The builder adapts claims, group mapping and principal lookup to it.",options:s=>Object.entries(IDP).map(([k,d])=>({v:k,label:d.label,s:d.ex,ex:d.issuer,
+   disabled:(k==="ki"&&s.caller==="employees")?"Kong Identity issues machine tokens. Interactive employee sign-in isn't generally available, so federate employees from your corporate IdP.":null}))},
+ {id:"record",title:"Identity record",ask:"Where does Kong find the caller's identity and groups?",help:s=>"This choice decides whether Consumer Groups are still required. <b>Token claims</b> keep everything in the IdP. <b>Kong Identity principals</b> add a central record with metadata, independent of the issuer. <b>Consumers</b> are the classic per-control-plane entities.",options:s=>{
+   const k=s.deploy==="konnect", key=s.cred==="apikey";
+   const recPrinc = k && (s.caller!=="employees" || key);
+   return [
+   {v:"claims",label:"Token claims only",s:`Virtual credential from ${s.idp?"<code>"+(s.caller==="employees"?IDP[s.idp].user:IDP[s.idp].app)+"</code>":"a claim"}, groups from <code>${s.idp?IDP[s.idp].groups:"groups"}</code>. Nothing stored in Kong.`,
+     disabled:key?"API keys carry no claims. Pick principals or Consumers.":null,tag:(!recPrinc&&!key)?"rec":null,tagText:"Recommended"},
+   {v:"principals",label:"Kong Identity principals",s:key?"Keys generated and hashed in the Konnect directory, metadata on each principal.":(s.idp==="ki"?"Each Kong Identity client is linked to a principal (auth_server_client identity).":"Principal looked up by issuer + claim (oidc identity), metadata on each principal."),
+     disabled:k?null:"Principals need a Konnect control plane and data planes.",tag:recPrinc?"rec":null,tagText:"Recommended"},
+   {v:"consumers",label:isAI(s)?"AI Consumers":"Kong Consumers",s:"One entity per caller in the control plane, with credentials or a mapped claim.",tag:"legacy",tagText:"Classic"}];
+ }},
+ {id:"access",title:"Access control",ask:"How do you decide what each caller may use?",help:s=>`Subscriptions are owned by the <b>${isAI(s)?"AI team (models, providers, agents)":"security team"}</b>. The options show whether they need subscription groups (sub-CGs).`,options:s=>{
+   const ai=isAI(s), pr=s.record==="principals", cl=s.record==="claims";
+   const subSrc = pr?"principal metadata consumer_groups":cl?`the ${IDP[s.idp]?.groups||"groups"} claim`:"Consumer membership";
+   return [
+   {v:"none",label:"Any authenticated caller",s:"No per-resource subscription.",tag:"nocg",tagText:"No CG"},
+   {v:"subcg",label:"Subscription groups + ACL",s:`One sub-CG per ${ai?(s.target==="models"?"model":s.target==="a2a"?"agent":"MCP server"):"API"}. Membership from ${subSrc}.`,tag:"cg",tagText:"sub-CG"},
+   {v:"meta",label:"Principal metadata + ACL allow_when",s:"<code>allow_when: '\"orders-api\" in principal.metadata.subscriptions'</code>",tag:"nocg",tagText:"No CG",
+     disabled:!pr?"Needs Kong Identity principals.":ai?"In AI Gateway 2.2, model and agent access lists accept group names only, and the acl policy is global-only.":null},
+   {v:"claimacl",label:"Groups claim + ACL",s:ai&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
+     disabled:!cl?"Needs token claims as the identity record.":(ai&&s.target!=="mcp")?"AI Gateway auth strategies don't expose authenticated_groups_claim; model and agent ACLs need group names.":null}];
+ }},
+ {id:"plans",title:"Usage plans",multi:true,ask:"Which usage plans apply? Pick several if they stack.",help:s=>isAI(s)?"LLM token budgets are owned by the <b>AI team</b>.":"Per-API plans are owned by the <b>API owner</b>, BU-wide plans by the <b>org admin</b>. They use different plugins, so both apply to one caller.",options:s=>{
+   const ai=isAI(s), pr=s.record==="principals";
+   if(ai) return [
+     {v:"none",label:"No plan",s:"Only access control."},
+     {v:"llm",label:"LLM token budget per tier",s:"Global ai-rate-limiting-advanced, rules per tier-CG, one counter per caller credential.",tag:"cg",tagText:"tier-CG",
+      disabled:s.target!=="models"?"AI rate limiting isn't available on agents or MCP servers in 2.2.":null}];
+   return [
+     {v:"none",label:"No plan",s:"Only access control."},
+     {v:"tier-cg",label:"Per-API plan · tier-CG",s:"rate-limiting-advanced on a tier-CG, e.g. 100 calls / 5 s per caller. The API owner owns the group.",tag:"cg",tagText:"tier-CG"},
+     {v:"tier-meta",label:"Per-API plan · metadata",s:"One rate-limiting-advanced, limit read from principal.metadata (expressions.limit).",tag:"nocg",tagText:"No CG",disabled:pr?null:"Needs Kong Identity principals."},
+     {v:"bu-cg",label:"BU-wide plan · BU-CG",s:"Basic rate-limiting on each BU group, e.g. 200 / minute per caller.",tag:"cg",tagText:"BU-CG"},
+     {v:"bu-meta",label:"BU-wide plan · metadata",s:"Basic rate-limiting, limit read from principal.metadata (expressions.minute).",tag:"nocg",tagText:"No CG",disabled:pr?null:"Needs Kong Identity principals."}];
+ }},
+ {id:"analytics",title:"Analytics",multi:true,ask:"How will you track usage?",help:s=>"Per caller is always on. Grouping by business unit needs a dimension that analytics can read: a Consumer Group, a cost tag, or a log label.",options:s=>{
+   const ai=isAI(s), k=s.deploy==="konnect";
+   return [
+     {v:"konnect",label:"Konnect Analytics",s:"Explorer and dashboards: principal, OIDC credential, consumer group, model, status.",disabled:k?null:"Needs Konnect."},
+     {v:"bu",label:"Break down by business unit",s:s.record==="principals"?"BU kept in principal metadata, plus a BU group or label for reporting.":"BU from the groups claim, mapped to a BU group or label."},
+     {v:"cost",label:"AI Cost Management",s:"Cost per subject and tag (Beta, US region).",disabled:!ai?"AI Gateway only.":s.target!=="models"?"Applies to LLM traffic.":!k?"Needs Konnect.":null},
+     {v:"agentan",label:"Agent analytics",s:"A2A methods, tasks, contexts and errors.",disabled:!(ai&&s.target==="a2a")?"A2A agents only.":null},
+     {v:"prom",label:"Prometheus + Grafana",s:"Service, route and model metrics. Identity labels come from a log-to-metric pipeline."},
+     {v:"otel",label:"OpenTelemetry",s:ai?"Traces and GenAI metrics to your collector.":"Request metrics with principal attributes (3.16), traces."}];
+ }}
+];
+
+/* ---------- state helpers ---------- */
+const visibleSteps = ()=>STEPS.filter(st=>!st.visible||st.visible(S));
+const answered = st=>st.multi?S[st.id].length>0:S[st.id]!=null;
+function optionValid(st,v){const o=st.options(S).find(o=>o.v===v);return o&&!o.disabled}
+function prune(){ // drop answers that became invalid after an upstream change
+  for(const st of STEPS){
+    if(st.visible&&!st.visible(S)){ S[st.id]=st.multi?[]:null; continue; }
+    if(st.multi) S[st.id]=S[st.id].filter(v=>optionValid(st,v));
+    else if(S[st.id]!=null&&!optionValid(st,S[st.id])) S[st.id]=null;
+  }
+}
+let cur="product";
+const save=()=>{try{localStorage.setItem("iwb",JSON.stringify({S,cur}))}catch(e){}};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const label=(st,v)=>{const o=st.options(S).find(o=>o.v===v);return o?o.label:v};
+
+/* ---------- render wizard ---------- */
+function renderStepper(){
+  const vs=visibleSteps(); const el=document.getElementById("stepper"); el.innerHTML="";
+  let open=true;
+  vs.forEach((st,i)=>{
+    const b=document.createElement("button");
+    const done=answered(st); if(st.id===cur) b.setAttribute("aria-current","step");
+    if(!open && st.id!==cur) b.disabled=true;
+    b.className=done?"done":"";
+    const val=st.multi?S[st.id].map(v=>label(st,v)).join(", "):(S[st.id]?label(st,S[st.id]):"");
+    b.innerHTML=`<span class="dot">${done?"✓":i+1}</span><span><span class="t">${st.title}</span><span class="v">${esc(val)||"&nbsp;"}</span></span>`;
+    b.onclick=()=>{cur=st.id;render()};
+    el.appendChild(b); if(!done) open=false;
+  });
+}
+function renderQuestion(){
+  const st=STEPS.find(s=>s.id===cur), q=document.getElementById("question");
+  const opts=st.options(S), vs=visibleSteps(), idx=vs.findIndex(s=>s.id===cur);
+  q.innerHTML=`<div><span class="eyebrow">Step ${idx+1} of ${vs.length}</span><h2>${st.ask}</h2></div>
+    ${st.help?`<p class="help">${st.help(S)}</p>`:""}
+    <div class="opts" role="${st.multi?"group":"radiogroup"}" aria-label="${st.title}"></div>
+    <div class="nav"><button class="btn" id="b-back" ${idx===0?"disabled":""}>Back</button><span class="sp"></span>
+      <button class="btn primary" id="b-next" ${answered(st)?"":"disabled"}>${idx===vs.length-1?"Build the workflow":"Next"}</button></div>`;
+  const box=q.querySelector(".opts");
+  opts.forEach(o=>{
+    const sel=st.multi?S[st.id].includes(o.v):S[st.id]===o.v;
+    const b=document.createElement("button"); b.className="opt"; b.setAttribute("aria-pressed",String(sel));
+    if(o.disabled) b.setAttribute("aria-disabled","true");
+    const tag=o.tag?`<span class="tag ${o.tag}">${o.tagText}</span>`:"";
+    b.innerHTML=`<span class="l">${esc(o.label)} ${tag}</span><span class="s">${o.s||""}</span>${o.ex?`<span class="ex">${esc(o.ex)}</span>`:""}${o.disabled?`<span class="why">${esc(o.disabled)}</span>`:o.why?`<span class="why">${esc(o.why)}</span>`:""}`;
+    b.onclick=()=>{ if(o.disabled) return;
+      if(st.multi){ let a=S[st.id]; if(o.v==="none") a=a.includes("none")?[]:["none"]; else { a=a.filter(x=>x!=="none"); a=a.includes(o.v)?a.filter(x=>x!==o.v):[...a,o.v]; } S[st.id]=a; }
+      else S[st.id]=o.v;
+      prune(); render();
+      if(!st.multi){ const n=vs[idx+1]; if(n&&STEPS.find(s=>s.id===n.id)) { cur=visibleSteps()[visibleSteps().findIndex(s=>s.id===st.id)+1]?.id||cur; render(); } }
+    };
+    box.appendChild(b);
+  });
+  q.querySelector("#b-back").onclick=()=>{cur=vs[idx-1].id;render()};
+  q.querySelector("#b-next").onclick=()=>{ if(idx<vs.length-1){cur=vs[idx+1].id;render()} else {render();document.getElementById("result").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})} };
+}
+const complete=()=>visibleSteps().every(answered);
+
+/* ---------- blueprint derivation ---------- */
+function derive(s){
+  const ai=isAI(s), pr=s.record==="principals", cl=s.record==="claims", co=s.record==="consumers";
+  const who=WHO[s.caller]||WHO.apps, idp=IDP[s.idp];
+  const tgt=ai?(s.target==="models"?{kind:"model",name:"gpt-large",sub:"ai-sub-gpt-large"}:s.target==="a2a"?{kind:"agent",name:"kongair",sub:"a2a-sub-kongair"}:{kind:"MCP server",name:"github-tools",sub:"mcp-sub-github"}):{kind:"API",name:"orders-api",sub:"sub-orders-api"};
+  const credClaim = cl||pr ? (idp?(s.caller==="employees"?idp.user:idp.app):null) : null;
+  const groups=[], meta={}, warns=[], notes=[];
+  const memb = pr?"principal metadata consumer_groups":cl?`${idp?idp.groups:"groups"} claim`:"Consumer membership";
+  if(s.access==="subcg") groups.push({name:tgt.sub,kind:"sub",owner:ai?"AI team":"Security team",carries:ai?`${tgt.kind} access.acls.allow`:"acl allow on the service",memb});
+  if(s.access==="meta") meta.subscriptions=[tgt.name];
+  const plans=s.plans||[];
+  if(plans.includes("tier-cg")) groups.push({name:"tier-bronze",kind:"tier",owner:"API owner",carries:"rate-limiting-advanced 100 / 5 s",memb});
+  if(plans.includes("tier-meta")) meta.rl_per_5s=100;
+  if(plans.includes("bu-cg")) groups.push({name:`bu-${who.bu}`,kind:"tier",owner:"Org admin",carries:"rate-limiting 200 / minute",memb});
+  if(plans.includes("bu-meta")) meta.bu_rl_minute=200;
+  if(plans.includes("llm")) groups.push({name:"ai-tier-standard",kind:"tier",owner:"AI team",carries:"rule in the global ai-rate-limiting-advanced",memb});
+  const buDim = (s.analytics||[]).includes("bu");
+  if(buDim && !groups.some(g=>g.name.startsWith("bu-")) && (s.analytics.includes("konnect")||ai)) groups.push({name:`bu-${who.bu}`,kind:"bu",owner:ai?"AI team":"Org admin",carries:"nothing: lets analytics group by BU",memb});
+  if(pr){ meta.bu=who.bu; if(groups.length) meta.consumer_groups=groups.map(g=>g.name); }
+  // auth
+  let auth;
+  if(s.cred==="apikey") auth = pr?{plugin:"key-auth",mode:"principals"}:{plugin:"key-auth",mode:"consumers"};
+  else auth = {plugin:"openid-connect",mode:s.record};
+  const authStrategy = ai;
+  // warnings
+  if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model or agent: callers from another issuer need their own route.");
+  if(ai) warns.push("AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first.");
+  if(!ai && auth.plugin==="openid-connect") warns.push("Gateway 3.16 rejects the config if openid-connect has ssl_verify: false. Keep it true and set cache_tokens_salt for decK.");
+  if(s.idp==="entra" && cl) warns.push("Entra ID groups are object IDs. Use app roles (roles claim) and name the groups after the roles.");
+  if(pr) warns.push("Principals are cached on the data plane (10 min by default): metadata changes are not instant.");
+  if(pr && groups.length && s.access!=="meta") warns.push("Two teams write the same metadata key (consumer_groups). Run membership changes through one provisioning pipeline.");
+  if(ai && s.target==="a2a") warns.push("AI Gateway 2.2.0 doesn't rewrite agent card URLs on JSON-RPC card methods. Add the post-function workaround.");
+  if(s.cred==="apikey" && s.caller==="employees") warns.push("Personal API keys don't follow joiners/leavers. Rotate them and set expires_at.");
+  if(co) notes.push("Consumers are created per control plane. With several control planes, every Consumer and its credentials is duplicated.");
+  if(plans.includes("tier-cg") && plans.includes("bu-cg")) notes.push("The API plan (rate-limiting-advanced) and the BU plan (rate-limiting) are different plugins, so both apply.");
+  if(cl && groups.length) notes.push(`Group membership is managed in ${idp?idp.label:"the IdP"}: Kong only defines the groups and their plugins.`);
+  // analytics plan
+  const an=[];
+  const A=s.analytics||[];
+  if(A.includes("konnect")) an.push({tool:"Konnect Analytics",where:"Observability → Explorer, or /v2/api-requests",dims:[pr?"principal":cl?"oidc_credential":"consumer", ...(groups.length?["consumer group"]:[]), ...(ai?["model","provider","tokens"]:["route","status"])].join(", ")});
+  if(A.includes("cost")) an.push({tool:"AI Cost Management (Beta)",where:"Applications → AI Cost Management · global pre-function for ai-cost-* tags",dims:`subject ${pr?"principal/<uuid>":cl?"oidc/<"+credClaim+">":"consumer/<uuid>"}, tags${buDim?" incl. bu":""}`});
+  if(A.includes("agentan")) an.push({tool:"Agent analytics",where:"Konnect Analytics · ai-a2a-proxy logging.statistics",dims:"method, task, context, error, principal"});
+  if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:ai?"prometheus policy (AI metrics) + http-log → Vector → Prometheus for identity labels":"prometheus plugin + http-log (custom_fields_by_lua) → Vector log_to_metric",dims:ai?"model, provider, tokens; caller and BU via the log pipeline":"service, route, status; caller and BU via the log pipeline"});
+  if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin/policy → collector",dims:!ai&&pr?"kong.auth.principal.display_name on request counts":ai?"gen_ai.* metrics, traces":"traces, request metrics"});
+  if(buDim && pr && !groups.some(g=>g.kind==="bu"||g.name.startsWith("bu-"))) notes.push("Principal metadata isn't an analytics dimension: keep a BU group or a log label to report by BU.");
+  return {ai,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans};
+}
+
+/* lab-validated combinations */
+function labMatch(s){ // core path (record, auth, access, plans) run end to end in the lab on 2026-10-09
+  const same=(a,b)=>a.length===b.length&&a.every(x=>b.includes(x));
+  const eq=o=>Object.entries(o).every(([k,v])=>Array.isArray(v)?same(v,s[k]):s[k]===v);
+  if(eq({product:"ai",deploy:"konnect",caller:"employees",target:"models",cred:"oidc",idp:"keycloak",record:"claims",access:"subcg",plans:["llm"]})) return "AI-1";
+  if(eq({product:"ai",deploy:"konnect",caller:"apps",target:"models",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["llm"]})) return "AI-2";
+  if(eq({product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"]})) return "AI-3";
+  if(eq({product:"api",deploy:"konnect",caller:"apps",cred:"apikey",record:"principals",access:"subcg",plans:["tier-cg"]})||
+     eq({product:"api",deploy:"konnect",caller:"apps",cred:"apikey",record:"principals",access:"subcg",plans:["tier-cg","bu-cg"]})) return "API-1";
+  if(eq({product:"api",deploy:"konnect",caller:"employees",cred:"oidc",idp:"keycloak",record:"claims",access:"subcg",plans:["bu-cg"]})) return "API-2";
+  return null;
+}
+
+function renderBlueprint(){
+  const el=document.getElementById("blueprint");
+  if(!S.product){el.innerHTML=`<h3>Live blueprint</h3><p class="muted" style="margin:0;color:var(--muted)">Your answers build the blueprint here: identity record, groups to create, plugins and warnings.</p>`;return}
+  const d=derive(S);
+  const nCG=d.groups.length;
+  el.innerHTML=`<h3>Live blueprint</h3>
+   <div class="kpis">
+     <div class="kpi ${nCG?"warn":"good"}"><b>${nCG}</b><span>Consumer Groups to create</span></div>
+     <div class="kpi ${S.record==="consumers"?"warn":"good"}"><b>${S.record==="consumers"?"Yes":S.record?"0":"–"}</b><span>${d.ai?"AI Consumers":"Consumers"}</span></div>
+     <div class="kpi"><b>${d.pr?"Yes":S.record?"No":"–"}</b><span>KI principals</span></div>
+     <div class="kpi"><b>${d.ai?(S.cred?"Yes":"–"):"n/a"}</b><span>Auth strategy</span></div>
+   </div>
+   ${nCG?`<div><h3>Groups</h3><ul class="plain">${d.groups.map(g=>`<li><span><code>${g.name}</code> · ${g.owner}</span></li>`).join("")}</ul></div>`:""}
+   ${Object.keys(d.meta).length&&d.pr?`<div><h3>Principal metadata</h3><pre class="code" style="max-height:none;padding:8px">${esc(JSON.stringify(d.meta,null,1))}</pre></div>`:""}
+   ${d.warns.length?`<div><h3>Watch out</h3><ul class="plain warns">${d.warns.slice(0,4).map(w=>`<li><span>${esc(w)}</span></li>`).join("")}</ul></div>`:""}`;
+}
+
+/* ---------- sequence generation ---------- */
+const L=(id,label,sub,kind)=>({id,label,sub,kind});
+function buildSeq(s,d){
+  const lanes=[], steps=[];
+  const who=d.who, ai=d.ai;
+  lanes.push(L("c",who.label,who.name,"actor"));
+  const tokenFlow=oidcLike(s);
+  if(tokenFlow) lanes.push(L("idp",d.idp.label,"OAuth server","idp"));
+  if(d.pr) lanes.push(L("dir","KI directory","principals","store"));
+  const authLabel=d.auth.plugin;
+  lanes.push(L("auth",authLabel,ai?"AuthStrategy":d.auth.mode==="principals"?"principals mode":"plugin","plugin"));
+  if(s.access&&s.access!=="none") lanes.push(L("acl","acl",s.access==="meta"?"allow_when":s.access==="claimacl"?"groups claim":"sub-CG","plugin"));
+  const rl=[];
+  if(d.plans.includes("llm")) rl.push(L("rla","ai-rate-limit-adv","token budget","plugin"));
+  if(d.plans.includes("tier-cg")||d.plans.includes("tier-meta")) rl.push(L("rla","rate-limiting-adv","API plan","plugin"));
+  if(d.plans.includes("bu-cg")||d.plans.includes("bu-meta")) rl.push(L("rl","rate-limiting","BU plan","plugin"));
+  lanes.push(...rl);
+  if(ai) lanes.push(s.target==="models"?L("px","ai-proxy-adv","model route","plugin"):s.target==="a2a"?L("px","ai-a2a-proxy","A2A","plugin"):L("px","ai-mcp-proxy","MCP","plugin"));
+  if(ai&&s.target==="a2a") lanes.push(L("post","post-function","skill trim","plugin"));
+  lanes.push(L("up",ai?(s.target==="models"?"LLM":s.target==="a2a"?"Remote agent":"MCP server"):d.tgt.name,"upstream","upstream"));
+  const claimsTxt = ()=>{ const g=d.idp?d.idp.groups:"groups"; const cc=d.credClaim||"sub";
+    const gl=d.cl?`\n${g}: [${d.groups.map(x=>x.name).join(", ")}]`:""; return `iss: ${d.idp?d.idp.issuer:""}\n${cc}: ${s.caller==="employees"?who.name:"<client_id>"}${gl}`; };
+  if(tokenFlow){
+    if(s.caller==="employees") steps.push({f:"c",t:"idp",l:"sign in (auth code + PKCE)",h:`${who.label} signs in at ${d.idp.label}`,p:"Group membership and lifecycle stay with IAM."});
+    else steps.push({f:"c",t:"idp",l:"client_credentials",h:"Exchange client ID and secret for a token",p:d.idp===IDP.ki?"Kong Identity client in the regional auth server.":`Client registered in ${d.idp.label}.`});
+    steps.push({f:"idp",t:"c",l:"access token (JWT)",h:"Short-lived token",p:d.cl?"The token carries the groups the gateway needs.":"The token proves who the caller is; groups come from elsewhere.",set:{claims:claimsTxt()}});
+  } else if(d.pr) steps.push({f:"dir",t:"c",l:"API key (issued once)",h:"Key issued by Kong Identity",p:"Generated in the directory and shown once. Only a hash is stored."});
+  else steps.push({f:"auth",t:"c",l:"API key (Consumer credential)",h:"Key stored on a Consumer",p:"Classic model: the key lives in the control plane config."});
+  const target = ai?(s.target==="models"?"POST /v1/chat/completions":s.target==="a2a"?"GET …/agent-card.json":"POST /mcp (tools/call)"):"GET /orders";
+  steps.push({f:"c",t:"auth",l:`${target}${tokenFlow?" · Bearer":" · apikey"}`,h:"Call through the gateway",p:ai?"On AI Gateway the AuthStrategy is the only way to authenticate a model, agent or MCP server.":"The auth plugin runs first (highest priority)."});
+  if(tokenFlow) steps.push({f:"auth",t:"auth",l:"verify signature (JWKS)",h:"Token verified",p:"Issuer, audience and expiry checked locally; JWKS cached."});
+  if(d.cl) steps.push({f:"auth",t:"auth",l:`credential_claim → '${s.caller==="employees"?who.name:"<client_id>"}'`,h:"Virtual credential, no Consumer",p:"The claim becomes ctx.authenticated_credential. No Consumer lookup happens.",set:{credential:`{ id: "${s.caller==="employees"?who.name:"<client_id>"}" }  (virtual)`}});
+  if(d.pr){
+    steps.push({f:"auth",t:"dir",l:tokenFlow?"fetch principal (mTLS, cached)":"authenticate key (mTLS, cached)",h:"Principal lookup",p:d.idp===IDP.ki?"Linked by an auth_server_client identity (auth server + client_id).":tokenFlow?`Linked by an oidc identity: issuer + ${d.credClaim}.`:"Key hash checked in the directory."});
+    steps.push({f:"dir",t:"auth",l:`principal ${who.name} + metadata`,h:"Identity and metadata",p:"Metadata drives groups, limits and conditions.",set:{principal:`${who.name}\nmetadata: ${JSON.stringify(d.meta)}`}});
+  }
+  if(d.co) steps.push({f:"auth",t:"auth",l:"Consumer matched",h:"Consumer entity",p:"Classic path: the Consumer must exist in this control plane.",set:{consumer:`${who.name} (Consumer)`}});
+  if(d.groups.length) steps.push({f:"auth",t:"auth",l:`${d.groups.length} group(s) on the request`,h:"Groups attached",p:d.pr?"From metadata consumer_groups (names or UUIDs).":d.cl?"From the groups claim, matched by name to existing groups.":"From Consumer membership.",set:{groups:d.groups.map(g=>`${g.name}  (${g.kind} · ${g.owner})`).join("\n")}});
+  let prev="auth";
+  if(lanes.find(l=>l.id==="acl")){
+    const why = s.access==="meta"?`allow_when: "${d.tgt.name}" in principal.metadata.subscriptions`:s.access==="claimacl"?"allow: group from the token":`allow [${d.tgt.sub}]`;
+    steps.push({f:prev,t:"acl",l:`${why} ✓`,h:"Subscription check",p:"A caller without the subscription gets a 403 here.",set:{decision:"acl: allowed"}}); prev="acl";
+  }
+  for(const r of rl){
+    const txt = r.sub==="token budget"?"tier rule · partition by credential":r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
+    steps.push({f:prev,t:r.id,l:txt,h:r.sub==="token budget"?"LLM token budget":r.sub==="API plan"?"API usage plan (API owner)":"BU-wide plan (org admin)",p:r.sub==="token budget"?"One global policy; its rules match tier groups, so a caller in several groups never conflicts.":"Over the limit returns 429.",set:{decision:"acl: allowed\n"+r.label+": within limit"}}); prev=r.id;
+  }
+  steps.push({f:prev,t:ai?"px":"up",l:ai?"":"proxied",h:ai?"Gateway-side protocol handling":"Proxied",p:""});
+  if(ai){
+    if(s.target==="a2a"){
+      steps.push({f:"px",t:"up",l:"GET /.well-known/agent-card.json",h:"Fetch the real card",p:"The upstream card advertises its internal URL and every skill."});
+      steps.push({f:"up",t:"px",l:"card (internal url, 4 skills)",h:"Upstream card",p:""});
+      steps.push({f:"px",t:"px",l:"rewrite url → gateway",h:"Native URL rewrite",p:"Follow-up calls come back through Kong."});
+      steps.push({f:"px",t:"post",l:"skills ∩ jwt.allowed_skills",h:"Skill trimming",p:"Discovery governance only: A2A calls carry no skill id."});
+      steps.push({f:"post",t:"c",l:"trimmed card",h:"The caller sees what it may use",p:""});
+    } else {
+      steps.push({f:"px",t:"up",l:s.target==="models"?"chat completion":"tools/call",h:"Upstream call",p:s.target==="models"?"Provider key injected by the gateway.":"Tool-level ACLs filter tools/list and tools/call."});
+      steps.push({f:"up",t:"c",l:"200 OK",h:"Response",p:""});
+    }
+  } else steps.push({f:"up",t:"c",l:"200 OK",h:"Response",p:""});
+  const lastSet = d.an.length?{analytics:d.an.map(a=>`${a.tool}: ${a.dims}`).join("\n")}:null;
+  if(lastSet) steps[steps.length-1].set=Object.assign({},steps[steps.length-1].set||{},lastSet);
+  steps[steps.length-1].p = steps[steps.length-1].p || "Usage is attributed without a Consumer when the record is claims or principals.";
+  const band = ai?`KONG AI GATEWAY · ${d.tgt.kind.toUpperCase()} ${d.tgt.name}`:`KONG GATEWAY 3.16 · SERVICE ${d.tgt.name}`;
+  return {lanes,steps,band};
+}
+
+/* ---------- config generation ---------- */
+function yamlList(a){return "["+a.join(", ")+"]"}
+function genDeclarative(s,d){
+  const iss = d.idp?d.idp.issuer:"";
+  if(d.ai){
+    const strat = d.auth.plugin==="openid-connect"
+      ? `  - name: ${s.caller}-auth
+    type: openid-connect
+    config:
+      issuer: ${iss}/.well-known/openid-configuration
+      auth_methods: [bearer]
+      audience_required: [kong-gateway]
+${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim: [${d.idp.groups}]\n      consumer_groups_optional: false\n`:""}${d.co?`      consumer_claims: [[${d.credClaim||"sub"}]]\n      consumer_by: [custom_id]\n`:""}${d.pr?`      principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}      cache_tokens_salt: change-me
+      ssl_verify: true`
+      : `  - name: ${s.caller}-keys
+    type: key-auth
+    config:
+      key_names: [apikey]
+${d.pr?"      principals: { enabled: true, directory: default, error_on_miss: true }":"      hide_credentials: true"}`;
+    const cgs = d.groups.map(g=>`  - { name: ${g.name}, display_name: "${g.kind} · ${g.owner}" }`).join("\n");
+    const cons = d.co?`    consumers:
+      - name: ${d.who.name}
+        type: ${d.auth.plugin==="key-auth"?"api-key":"oauth"}
+${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} value>"\n`}        consumer_groups: ${yamlList(d.groups.map(g=>g.name))}\n`:"";
+    const pol=[];
+    if(d.plans.includes("llm")) pol.push(`  - name: llm-usage-plans          # global · AI team
+    type: ai-rate-limiting-advanced
+    global: true
+    config:
+      identifier: credential
+      strategy: local
+      policies:
+        - match: [{ type: consumer_group, key: name, values: [ai-tier-standard] },
+                  { type: credential, partition_by: true }]
+          window_type: fixed
+          limits: [{ limit: 10000, window_size: 3600 }]`);
+    if(s.target==="a2a") pol.push(`  - name: trim-agent-card          # skill allowance from the JWT claim allowed_skills
+    type: post-function
+    config:
+      header_filter: ['kong.response.clear_header("Content-Length")']
+      body_filter: ['<trim-agent-card.lua>']`);
+    if((s.analytics||[]).includes("prom")) pol.push(`  - name: metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
+    const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`:"";
+    let ent;
+    if(s.target==="models") ent=`    models:
+      - name: ${d.tgt.name}
+        type: model
+        capabilities: [generate]
+        formats: [{ type: openai }]
+        config: { route: { paths: [/v1], model: { body_param: model, values: [${d.tgt.name}] } } }
+        targets: [{ name: gpt-4.1, provider: openai, config: { type: openai } }]
+        access: { auth_strategies: [${d.auth.plugin==="openid-connect"?s.caller+"-auth":s.caller+"-keys"}]${allow} }`;
+    else if(s.target==="a2a") ent=`    agents:
+      - name: ${d.tgt.name}
+        type: a2a
+        config: { url: http://kongair-agent.internal:10000/, route: { paths: [/agents/${d.tgt.name}] }, logging: { statistics: true } }
+        access: { auth_strategies: [${s.caller}-auth]${allow} }
+        policies: [trim-agent-card]`;
+    else ent=`    mcp_servers:
+      - name: ${d.tgt.name}
+        type: proxy
+        config: { url: https://mcp.github.example/mcp, route: { paths: [/mcp/github] } }
+        access: { auth_strategies: [${s.caller}-auth]${s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`:""} }${s.access==="claimacl"?`\n        # tool ACLs from the token: acl_attribute_type: oauth_access_token, access_token_claim_field: .${d.idp.groups}`:""}`;
+    return {lang:"yaml",title:s.deploy==="konnect"?"kongctl apply -f aigw.yaml":"deck ai sync aigw.yaml",text:`${s.deploy==="konnect"?"# kongctl apply -f aigw.yaml":"# deck ai sync (self-managed)"}
+ai_gateways:
+  - ref: aigw
+    name: acme-aigw
+    display_name: ACME AI Gateway
+    auth_strategies:
+${strat.replace(/^/gm,"  ")}
+${cgs?`    consumer_groups:\n${cgs.replace(/^/gm,"  ")}\n`:""}${cons}${pol.length?`    policies:\n${pol.join("\n").replace(/^/gm,"  ")}\n`:""}${ent}`};
+  }
+  // API gateway decK
+  const cg=[];
+  for(const g of d.groups){
+    let plug="";
+    if(g.kind==="tier"&&g.owner==="API owner") plug=`\n    plugins:\n      - name: rate-limiting-advanced\n        config: { identifier: ${d.pr?"principal":d.cl?"credential":"consumer"}, limit: [100], window_size: [5], window_type: fixed, strategy: local, namespace: ${g.name} }`;
+    if(g.owner==="Org admin"&&g.kind==="tier") plug=`\n    plugins:\n      - name: rate-limiting\n        config: { minute: 200, limit_by: ${d.pr?"principal":d.cl?"credential":"consumer"}, policy: local }`;
+    cg.push(`  - name: ${g.name}            # ${g.kind} · ${g.owner}${plug}`);
+  }
+  const authPlug = d.auth.plugin==="openid-connect"?`      - name: openid-connect
+        config:
+          issuer: ${iss}/.well-known/openid-configuration
+          auth_methods: [bearer]
+          audience_required: [kong-gateway]
+${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: false\n`:""}${s.access==="claimacl"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
+          ssl_verify: true`:`      - name: key-auth
+        config:
+          key_names: [apikey]
+${d.pr?"          identity_realms: []\n          principals: { enabled: true, directory: default }":"          hide_credentials: true"}`;
+  let acl="";
+  if(s.access==="subcg") acl=`\n      - name: acl\n        config: { allow: [${d.tgt.sub}], include_consumer_groups: true }`;
+  if(s.access==="meta") acl=`\n      - name: acl\n        config:\n          allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions']`;
+  if(s.access==="claimacl") acl=`\n      - name: acl\n        config: { allow: [${d.tgt.name}-users] }   # group names from authenticated_groups_claim`;
+  const glob=[];
+  if(d.plans.includes("tier-meta")) glob.push(`  - name: rate-limiting-advanced     # API owner · limit from principal metadata
+    service: ${d.tgt.name}
+    config: { identifier: principal, limit: [10], window_size: [5], window_type: fixed }
+    expressions: { limit: [principal.metadata.rl_per_5s] }`);
+  if(d.plans.includes("bu-meta")) glob.push(`  - name: rate-limiting              # org admin · BU plan from principal metadata
+    config: { minute: 60, limit_by: principal, policy: local }
+    expressions: { minute: principal.metadata.bu_rl_minute }`);
+  if((s.analytics||[]).includes("prom")) glob.push(`  - name: prometheus\n    config: { status_code_metrics: true, latency_metrics: true }\n  - name: http-log                   # identity labels for Grafana (Vector log_to_metric)\n    config:\n      http_endpoint: http://vector.observability:8686/\n      custom_fields_by_lua:\n        user: "local c = kong.client.get_credential(); return c and c.id"\n        bu: "local gs = kong.client.get_consumer_groups() or {}; for _, g in ipairs(gs) do if g.name:sub(1,3) == 'bu-' then return g.name end end"`);
+  if((s.analytics||[]).includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, push_interval: 5, enable_request_metrics: true${d.pr?", enable_principal_attribute: true":""} }`);
+  const consumers = d.co?`consumers:\n  - username: ${d.who.name}\n${d.auth.plugin==="key-auth"?"    keyauth_credentials: [{ key: \"<generated>\" }]\n":`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${d.groups.length?`    groups: [${d.groups.map(g=>`{ name: ${g.name} }`).join(", ")}]\n`:""}`:"";
+  return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-apis":""}
+_format_version: "3.0"
+${cg.length?`consumer_groups:\n${cg.join("\n")}\n`:""}${consumers}services:
+  - name: ${d.tgt.name}
+    url: http://orders.internal:8080
+    tags: [order-management]
+    routes: [{ name: orders, paths: [/orders], tags: [order-management] }]
+    plugins:
+${authPlug}${acl}
+${glob.length?`plugins:\n${glob.join("\n")}\n`:""}`};
+}
+
+function genApi(s,d){
+  const out=[];
+  out.push(`export KONNECT_API=https://us.api.konghq.com   # your region\nexport H="Authorization: Bearer $KONNECT_TOKEN"`);
+  if(s.idp==="ki"){
+    out.push(`# Kong Identity auth server, scope and client (security team)
+AS=$(curl -s -X POST $KONNECT_API/v1/auth-servers -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"acme","audience":"kong-gateway"}' | jq -r .id)
+SCOPE=$(curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/scopes -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"${d.ai?"llm.invoke":"orders.read"}","enabled":true}' | jq -r .id)
+curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/clients -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"${d.who.name}","grant_types":["client_credentials"],"response_types":["token"],
+       "allow_scopes":["'$SCOPE'"],"labels":{"app":"${d.who.name}"${s.target==="a2a"?',"skills":"search_flights.get_booking"':""}}}'   # client_secret returned once`);
+    if(s.target==="a2a") out.push(`# Claim templated from the client label (renders a JSON array)
+curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/claims -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"allowed_skills","value":"\${ .Client.Labels.skills | default \\"\\" | splitList \\".\\" | toJson }",
+       "include_in_token":true,"include_in_all_scopes":true,"enabled":true}'`);
+    if(d.cl && d.groups.length) out.push(`# Groups claim templated from a client label (claims-only record)
+curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/claims -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"groups","value":"\${ .Client.Labels.groups | default \\"\\" | splitList \\".\\" | toJson }",
+       "include_in_token":true,"include_in_all_scopes":true,"enabled":true}'`);
+  }
+  if(d.pr){
+    out.push(`# Directory (one per region; reuse it if it exists)
+DIR=$(curl -s $KONNECT_API/v2/directories -H "$H" | jq -r '.data[0].id // empty')
+[ -n "$DIR" ] || DIR=$(curl -s -X POST $KONNECT_API/v2/directories -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"default","allow_all_control_planes":true}' | jq -r .id)
+
+# Principal (identity / security pipeline)
+P=$(curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals -H "$H" -H 'content-type: application/json' \\
+  -d '${JSON.stringify(Object.assign({display_name:d.who.name},s.caller==="agents"?{type:"agent"}:{}, {metadata:d.meta}))}' | jq -r .id)`);
+    if(s.cred==="apikey") out.push(`# API key, generated by Kong Identity (secret returned once)
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/api-keys -H "$H" -H 'content-type: application/json' -d '{"type":"v1"}'`);
+    else if(s.idp==="ki") out.push(`# Link the Kong Identity client to the principal
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/identities -H "$H" -H 'content-type: application/json' \\
+  -d '{"type":"auth_server_client","auth_server_id":"'$AS'","client_id":"<client_id>"}'`);
+    else out.push(`# Link the ${d.idp.label} identity to the principal (issuer + claim)
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/identities -H "$H" -H 'content-type: application/json' \\
+  -d '{"type":"oidc","issuer":"${d.idp.issuer}","claim":{"name":"${d.credClaim}","value":"${s.caller==="employees"?d.who.name:"<client_id>"}"}}'`);
+    if(d.groups.length && d.ai) out.push(`# consumer_groups metadata takes AI Gateway group UUIDs (or names)
+curl -s "$KONNECT_API/v1/ai-gateways/$AIGW/consumer-groups" -H "$H" | jq -r '.data[] | "\\(.name) \\(.id)"'`);
+  }
+  if(s.caller==="agents" && d.pr && s.deploy==="konnect") out.push(`# Register the calling agent in Konnect Catalog (beta) and link its principal
+A=$(curl -s -X POST "$KONNECT_API/v1/agents?create_version=false" -H "$H" -H 'content-type: application/json' \\
+  -d '{"source_type":"manual","slug":"${d.who.name}","display_name":"${d.who.name}"}' | jq -r .id)
+curl -s -X POST $KONNECT_API/v1/agents/$A/principals -H "$H" -H 'content-type: application/json' \\
+  -d '{"principal_id":"'$P'","directory_id":"'$DIR'"}'`);
+  if(out.length===1) out.push("# Nothing to call: everything for this workflow is declarative.");
+  return {lang:"bash",title:"Konnect API",text:out.join("\n\n")};
+}
+
+function genTf(s,d){
+  const t=[];
+  t.push(`terraform {\n  required_providers {\n    konnect      = { source = "kong/konnect" }\n${d.pr?'    konnect-beta = { source = "kong/konnect-beta" }   # identity_directory\n':""}  }\n}`);
+  if(s.idp==="ki") t.push(`resource "konnect_identity_auth_server" "acme" {
+  name     = "acme"
+  audience = "kong-gateway"
+}
+resource "konnect_identity_auth_server_scope" "invoke" {
+  auth_server_id = konnect_identity_auth_server.acme.id
+  name           = "${d.ai?"llm.invoke":"orders.read"}"
+  enabled        = true
+}
+resource "konnect_identity_auth_server_client" "${d.who.name.replace(/-/g,"_")}" {
+  auth_server_id   = konnect_identity_auth_server.acme.id
+  name             = "${d.who.name}"
+  grant_types      = ["client_credentials"]
+  response_types   = ["token"]
+  allow_all_scopes = false
+  allow_scopes     = [konnect_identity_auth_server_scope.invoke.id]
+  labels           = { app = "${d.who.name}" }
+}`);
+  if(d.pr) t.push(`resource "konnect_identity_directory" "default" {
+  provider                 = konnect-beta
+  name                     = "default"
+  allow_all_control_planes = true
+}
+# Principals, their metadata and identities have no Terraform resource yet:
+# create them with the Konnect API calls (see the Konnect API tab).`);
+  if(d.ai){
+    t.push(`resource "konnect_ai_gateway" "acme" {
+  name            = "acme-aigw"
+  display_name    = "ACME AI Gateway"
+  deployment_type = "hybrid"
+}`);
+    const oc = d.auth.plugin==="openid-connect";
+    t.push(`resource "konnect_ai_gateway_auth_strategy" "${s.caller}" {
+  gateway_id = konnect_ai_gateway.acme.id
+  ${oc?"openid_connect":"key_auth"} = {
+    name         = "${s.caller}-${oc?"auth":"keys"}"
+    display_name = "${WHO[s.caller].label}s"
+    config = {
+${oc?`      issuer            = "${d.idp.issuer}/.well-known/openid-configuration"
+      auth_methods      = ["bearer"]
+      audience_required = ["kong-gateway"]
+${d.cl||d.pr?`      credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim = ["${d.idp.groups}"]\n`:""}      ssl_verify        = true`:`      key_names = ["apikey"]`}
+${d.pr?`      principals = { enabled = true, directory = "default", error_on_miss = true${oc?", match_consumer_groups = true":""} }`:""}
+    }
+  }
+}`);
+    d.groups.forEach(g=>t.push(`resource "konnect_ai_gateway_consumer_group" "${g.name.replace(/-/g,"_")}" {
+  gateway_id   = konnect_ai_gateway.acme.id
+  name         = "${g.name}"            # ${g.kind} · ${g.owner}
+  display_name = "${g.name}"
+}`));
+    if(d.plans.includes("llm")) t.push(`resource "konnect_ai_gateway_policy" "llm_usage_plans" {
+  gateway_id   = konnect_ai_gateway.acme.id
+  name         = "llm-usage-plans"
+  display_name = "LLM usage plans"
+  type         = "ai-rate-limiting-advanced"
+  global       = true
+  config = jsonencode({
+    identifier = "credential", strategy = "local",
+    policies = [{
+      match       = [{ type = "consumer_group", key = "name", values = ["ai-tier-standard"] },
+                     { type = "credential", partition_by = true }]
+      window_type = "fixed"
+      limits      = [{ limit = 10000, window_size = 3600 }]
+    }]
+  })
+}`);
+    const res = s.target==="models"?"konnect_ai_gateway_model":s.target==="a2a"?"konnect_ai_gateway_agent":"konnect_ai_gateway_mcp_server";
+    t.push(`resource "${res}" "${d.tgt.name.replace(/-/g,"_")}" {
+  gateway_id = konnect_ai_gateway.acme.id
+  # name, config, targets: see the kongctl tab for the same entity
+  # access = { auth_strategies = ["${s.caller}-${oc?"auth":"keys"}"]${s.access==="subcg"?`, acls = { allow = ["${d.tgt.sub}"] }`:""} }
+}`);
+  } else {
+    t.push(`resource "konnect_gateway_control_plane" "acme" {
+  name         = "acme-apis"
+  cluster_type = "CLUSTER_TYPE_CONTROL_PLANE"
+  auth_type    = "pki_client_certs"
+}`);
+    d.groups.forEach(g=>t.push(`resource "konnect_gateway_consumer_group" "${g.name.replace(/-/g,"_")}" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  name             = "${g.name}"        # ${g.kind} · ${g.owner}
+}`));
+    const oc=d.auth.plugin==="openid-connect";
+    t.push(`resource "konnect_gateway_plugin_${oc?"openid_connect":"key_auth"}" "auth" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  service          = { id = "<orders-api service id>" }
+  config = {
+${oc?`    issuer            = "${d.idp.issuer}/.well-known/openid-configuration"
+    auth_methods      = ["bearer"]
+    audience_required = ["kong-gateway"]
+${d.cl||d.pr?`    credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`    consumer_groups_claim = ["${d.idp.groups}"]\n`:""}    ssl_verify        = true`:`    key_names       = ["apikey"]\n    identity_realms = []`}
+${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
+  }
+}`);
+    if(s.access==="subcg") t.push(`resource "konnect_gateway_plugin_acl" "subscription" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  service          = { id = "<orders-api service id>" }
+  config           = { allow = ["${d.tgt.sub}"], include_consumer_groups = true }
+}`);
+    if(s.access==="meta") t.push(`resource "konnect_gateway_plugin_acl" "subscription" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  service          = { id = "<orders-api service id>" }
+  config           = { allow_when = ["\\"${d.tgt.name}\\" in principal.metadata.subscriptions"] }
+}`);
+    if(d.plans.includes("tier-cg")) t.push(`resource "konnect_gateway_plugin_rate_limiting_advanced" "tier_bronze" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  consumer_group   = { id = konnect_gateway_consumer_group.tier_bronze.id }
+  config = { identifier = "${d.pr?"principal":"credential"}", limit = [100], window_size = [5], window_type = "fixed", strategy = "local", namespace = "tier-bronze" }
+}`);
+    if(d.plans.includes("bu-cg")) t.push(`resource "konnect_gateway_plugin_rate_limiting" "bu_${d.who.bu}" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  consumer_group   = { id = konnect_gateway_consumer_group.bu_${d.who.bu}.id }
+  config           = { minute = 200, limit_by = "${d.pr?"principal":"credential"}", policy = "local" }
+}`);
+    if(d.plans.includes("tier-meta")||d.plans.includes("bu-meta")) t.push(`# Plugin "expressions" (limits read from principal metadata) are 3.16 features:
+# check that your provider version exposes them, or manage those two plugins with decK.`);
+  }
+  return {lang:"hcl",title:"Terraform",text:t.join("\n\n")};
+}
+
+/* ---------- result rendering ---------- */
+let seq=null, step=0, timer=null, playing=false, tab="decl";
+const NS="http://www.w3.org/2000/svg";
+function sv(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e}
+const COL=120,PADL=10,Y0=100,DY=38;
+const lx=id=>PADL+seq.lanes.findIndex(l=>l.id===id)*COL+COL/2;
+function drawSeq(){
+  const n=seq.lanes.length, W=PADL*2+n*COL, H=Y0+seq.steps.length*DY+14, box=document.getElementById("diagram");
+  box.innerHTML=""; const svg=sv("svg",{viewBox:`0 0 ${W} ${H}`,role:"img","aria-label":"Sequence diagram"},box);
+  svg.style.minWidth=Math.max(680,W*.8)+"px";
+  const defs=sv("defs",{},svg);
+  for(const id of ["ah","aha"]){const m=sv("marker",{id,viewBox:"0 0 10 10",refX:9,refY:5,markerWidth:7,markerHeight:7,orient:"auto-start-reverse"},defs);sv("path",{d:"M0,0 L10,5 L0,10 z"},m)}
+  const pl=seq.lanes.map((l,i)=>[l,i]).filter(([l])=>l.kind==="plugin");
+  if(pl.length){const x1=PADL+pl[0][1]*COL+4,x2=PADL+(pl[pl.length-1][1]+1)*COL-4;sv("rect",{x:x1,y:8,width:x2-x1,height:H-14,rx:8,class:"band"},svg);const t=sv("text",{x:x1+10,y:22,class:"bandl"},svg);t.textContent=seq.band}
+  seq.lanes.forEach((l,i)=>{const cx=PADL+i*COL+COL/2;sv("line",{x1:cx,y1:74,x2:cx,y2:H-6,class:"lane"},svg);
+    const g=sv("g",{class:"hd "+l.kind},svg);sv("rect",{x:cx-COL/2+7,y:32,width:COL-14,height:40,rx:l.kind==="plugin"||l.kind==="idp"||l.kind==="store"?20:6},g);
+    const a=sv("text",{x:cx,y:49,"text-anchor":"middle",class:"l1"},g);a.textContent=l.label;const b=sv("text",{x:cx,y:63,"text-anchor":"middle",class:"l2"},g);b.textContent=l.sub});
+  seq.steps.forEach((s,i)=>{const y=Y0+i*DY,g=sv("g",{class:"msg",id:"m"+i},svg),xa=lx(s.f),xb=lx(s.t);
+    if(s.f===s.t){sv("path",{d:`M${xa},${y-7} h20 v14 h-18`,"marker-end":"url(#ah)"},g);const right=seq.lanes.findIndex(l=>l.id===s.f)<n-3;const t=sv("text",{x:right?xa+28:xa-8,y:y+4,"text-anchor":right?"start":"end"},g);t.textContent=s.l}
+    else{sv("line",{x1:xa,y1:y,x2:xb+(xb>xa?-3:3),y2:y,"marker-end":"url(#ah)"},g);if(s.l){const t=sv("text",{x:(xa+xb)/2,y:y-6,"text-anchor":"middle"},g);t.textContent=s.l}}});
+  sv("circle",{r:6,cx:-20,cy:-20,class:"packet",id:"pk"},svg);
+}
+const ROWS=[["claims","Token claims"],["credential","ctx.authenticated_credential"],["principal","ctx.authenticated_principal"],["consumer","Consumer"],["groups","Consumer Groups on the request"],["decision","Policy decisions"],["analytics","Recorded usage"]];
+function moveTo(i,anim){
+  step=Math.max(0,Math.min(seq.steps.length-1,i));
+  seq.steps.forEach((s,k)=>{const g=document.getElementById("m"+k);if(!g)return;g.setAttribute("class","msg "+(k<step?"past":k===step?"current":"future"));g.querySelectorAll("[marker-end]").forEach(p=>p.setAttribute("marker-end",k===step?"url(#aha)":"url(#ah)"))});
+  const s=seq.steps[step];
+  document.getElementById("sn").textContent=`${step+1} / ${seq.steps.length}`;
+  document.getElementById("sh").textContent=s.h; document.getElementById("sp").textContent=s.p||s.l||"";
+  const acc={},ch=new Set(); seq.steps.slice(0,step+1).forEach((x,k)=>{if(x.set)for(const key in x.set){acc[key]=x.set[key];if(k===step)ch.add(key)}});
+  const kv=document.getElementById("kv"); kv.innerHTML="";
+  for(const [k,lab] of ROWS){const v=k==="consumer"&&!acc.consumer?"none":acc[k];const div=document.createElement("div");if(ch.has(k))div.className="changed";
+    div.innerHTML=`<dt>${lab}</dt><dd class="${v===undefined?"none":""}">${v===undefined?"—":esc(v)}</dd>`;kv.appendChild(div)}
+  const pk=document.getElementById("pk");
+  if(!anim||matchMedia("(prefers-reduced-motion: reduce)").matches){pk.setAttribute("cx",-20);return}
+  const y=Y0+step*DY,xa=lx(s.f),xb=lx(s.t),t0=performance.now();
+  const f=now=>{const t=Math.min(1,(now-t0)/700),e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    if(s.f!==s.t){pk.setAttribute("cx",xa+(xb-xa)*e);pk.setAttribute("cy",y)}else{const d=e*52;pk.setAttribute("cx",d<20?xa+d:d<34?xa+20:xa+20-(d-34));pk.setAttribute("cy",d<20?y-7:d<34?y-7+(d-20):y+7)}
+    if(t<1)requestAnimationFrame(f);else setTimeout(()=>pk.setAttribute("cx",-20),300)};
+  requestAnimationFrame(f);
+}
+function play(){stop();playing=true;document.getElementById("bp").textContent="Pause";moveTo(0,true);timer=setInterval(()=>{if(step>=seq.steps.length-1){stop();return}moveTo(step+1,true)},2100)}
+function stop(){playing=false;if(timer)clearInterval(timer);timer=null;const b=document.getElementById("bp");if(b)b.textContent="Play"}
+
+function renderResult(){
+  const r=document.getElementById("result");
+  if(!complete()){r.hidden=true;return}
+  r.hidden=false; const d=derive(S); seq=buildSeq(S,d);
+  const lab=labMatch(S);
+  const CFG={decl:genDeclarative(S,d),api:genApi(S,d),tf:genTf(S,d)};
+  const summary=[
+    ["Product",`${S.product==="ai"?"AI Gateway 2.2":"Kong Gateway 3.16"} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
+    ["Caller",`${WHO[S.caller].label}s${d.ai?" → "+d.tgt.kind+"s":""}`],
+    ["Credential",S.cred==="apikey"?"API keys":`${S.cred==="oidc"?"OIDC login":"OAuth client credentials"} · ${d.idp.label}`],
+    ["Identity record",S.record==="claims"?`Token claims (virtual credential ${d.credClaim})`:S.record==="principals"?"Kong Identity principals":"Consumers"],
+    ["Auth",d.ai?`AuthStrategy ${d.auth.plugin}${d.pr?" + principals":""}`:`${d.auth.plugin}${d.pr?" (principals)":""}`],
+    ["Access",STEPS.find(s=>s.id==="access").options(S).find(o=>o.v===S.access)?.label||"–"],
+    ["Plans",S.plans.map(v=>label(STEPS.find(s=>s.id==="plans"),v)).join(", ")]];
+  r.innerHTML=`
+   <div class="res-head"><h2>Your identity workflow</h2>${lab?`<span class="badge ok">Core path validated in the lab · ${lab}</span>`:`<span class="badge draft">Generated draft · not lab-tested</span>`}</div>
+   <div class="stage">
+     <div class="panel"><div class="diagram" id="diagram"></div>
+       <div class="caption" aria-live="polite"><span class="stepno" id="sn"></span><div><h4 id="sh"></h4><p id="sp"></p></div></div>
+       <div class="ctl"><button class="btn primary" id="bp">Play</button><button class="btn" id="bprev">Previous</button><button class="btn" id="bnext">Next</button></div></div>
+     <aside class="panel inspector"><h3>Request context after this step</h3><dl class="kv" id="kv"></dl></aside>
+   </div>
+   <div class="grid2">
+     <div class="panel"><h3>Summary</h3><div class="tablebox"><table><tbody>${summary.map(([k,v])=>`<tr><th scope="row">${k}</th><td>${esc(v)}</td></tr>`).join("")}</tbody></table></div></div>
+     <div class="panel"><h3>Consumer Groups to create</h3>${d.groups.length?`<div class="tablebox"><table><thead><tr><th>Group</th><th>Kind</th><th>Owner</th><th>Carries</th><th>Members from</th></tr></thead><tbody>${d.groups.map(g=>`<tr><td><code>${g.name}</code></td><td><span class="kind ${g.kind}">${g.kind==="sub"?"sub-CG":g.kind==="tier"?"tier-CG":"BU-CG"}</span></td><td>${g.owner}</td><td>${esc(g.carries)}</td><td>${esc(g.memb)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">None. Access and plans are handled without Consumer Groups.</p>`}
+       ${d.pr&&Object.keys(d.meta).length?`<h3>Principal metadata</h3><pre class="code">${esc(JSON.stringify(d.meta,null,2))}</pre>`:""}</div>
+     <div class="panel"><h3>Analytics</h3>${d.an.length?`<div class="tablebox"><table><thead><tr><th>Tool</th><th>Where</th><th>Dimensions</th></tr></thead><tbody>${d.an.map(a=>`<tr><td>${a.tool}</td><td>${esc(a.where)}</td><td>${esc(a.dims)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">No analytics selected.</p>`}</div>
+     <div class="panel"><h3>Watch out</h3><ul class="plain warns">${[...d.warns,...d.notes].map(w=>`<li><span>${esc(w)}</span></li>`).join("")||"<li><span>Nothing specific.</span></li>"}</ul></div>
+   </div>
+   <div class="panel"><div class="tabs" role="tablist">
+       <button role="tab" data-t="decl">${d.ai?(S.deploy==="konnect"?"kongctl":"deck ai sync"):"decK"}</button>
+       <button role="tab" data-t="api">Konnect API</button><button role="tab" data-t="tf">Terraform</button></div>
+     <div class="codewrap"><button class="btn copy" id="bcopy">Copy</button><pre class="code" id="code"></pre></div></div>`;
+  drawSeq(); moveTo(seq.steps.length-1,false);
+  document.getElementById("bp").onclick=()=>playing?stop():play();
+  document.getElementById("bprev").onclick=()=>{stop();moveTo(step-1,true)};
+  document.getElementById("bnext").onclick=()=>{stop();moveTo(step+1,true)};
+  const showTab=t=>{tab=t;r.querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));document.getElementById("code").textContent=CFG[t].text};
+  r.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>showTab(b.dataset.t)); showTab(tab);
+  document.getElementById("bcopy").onclick=e=>{const txt=document.getElementById("code").textContent;
+    navigator.clipboard.writeText(txt).then(()=>{e.target.textContent="Copied";setTimeout(()=>e.target.textContent="Copy",1400)}).catch(()=>{const sel=getSelection(),rg=document.createRange();rg.selectNodeContents(document.getElementById("code"));sel.removeAllRanges();sel.addRange(rg)})};
+}
+
+function render(){
+  if(!visibleSteps().some(s=>s.id===cur)) cur=visibleSteps()[0].id;
+  renderStepper(); renderQuestion(); renderBlueprint(); renderResult(); save();
+}
+document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";render()};
+document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
+document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
+try{const st=JSON.parse(localStorage.getItem("iwb")||"null");if(st&&st.S){Object.assign(S,st.S);cur=st.cur||"product";prune()}}catch(e){}
+if(!S.product){Object.assign(S,{product:"ai",deploy:"konnect",caller:"apps",target:"models",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["llm"],analytics:["konnect","bu","cost"]});cur="analytics"}
+render();
+</script>
+</body>
+</html>
