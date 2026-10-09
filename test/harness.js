@@ -20,6 +20,11 @@ function walk(i) {
       const outs = [X.genDeclarative(S, d), X.genApi(S, d), X.genTf(S, d)];
       if (!q.steps.every(s => q.lanes.some(l => l.id === s.f) && q.lanes.some(l => l.id === s.t))) throw new Error("step references a missing lane");
       for (const o of outs) if (/undefined|NaN|\[object/.test(o.text)) throw new Error(`"${o.title}" output contains undefined/NaN`);
+      // product-specific invariants
+      if (S.product === "ai1" && /ai_gateways|AuthStrategy|konnect_ai_gateway/.test(outs[0].text + outs[2].text)) throw new Error("AI GW 1.x output uses 2.x entities");
+      if (S.product === "ai1" && S.target === "models" && !/ai-proxy-advanced/.test(outs[0].text)) throw new Error("AI GW 1.x model route without ai-proxy-advanced");
+      if (S.product === "ai" && !/ai_gateways/.test(outs[0].text)) throw new Error("AI GW 2.x output without ai_gateways");
+      if (S.version === "3.15" && /allow_when|expressions:/.test(outs[0].text)) throw new Error("3.16-only feature generated for 3.15");
       if (!d.groups.length) cgFree++;
       const m = X.labMatch(S); if (m) labs[m] = (labs[m] || 0) + 1;
     } catch (e) { errs++; if (errs < 8) console.log("ERR", e.message, JSON.stringify(S)); }

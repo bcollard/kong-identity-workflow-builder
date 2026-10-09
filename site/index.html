@@ -193,24 +193,31 @@ const WHO = {
 };
 
 /* ---------- wizard definition ---------- */
-const S = {product:null,deploy:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]};
-const isAI = s=>s.product==="ai";
+const S = {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]};
+const isAI = s=>s.product==="ai";            // AI Gateway 2.x entity model
+const isAI1 = s=>s.product==="ai1";          // AI Gateway 1.x: Kong Gateway + AI plugins
+const isAIany = s=>isAI(s)||isAI1(s);
+const gw316 = s=>s.version!=="3.15";
 const oidcLike = s=>s.cred==="oidc"||s.cred==="cc";
 
 const STEPS = [
  {id:"product",title:"Product",ask:"Which gateway receives the calls?",options:s=>[
    {v:"api",label:"API Gateway",s:"REST/gRPC APIs on Kong Gateway 3.16",ex:"services · routes · plugins"},
-   {v:"ai",label:"AI Gateway",s:"LLMs, A2A agents and MCP servers on AI Gateway 2.2",ex:"models · agents · auth strategies · policies"}]},
+   {v:"ai",label:"AI Gateway 2.x",s:"LLMs, A2A agents and MCP servers with the AI Gateway entity model (2.2)",ex:"models · agents · auth strategies · policies"},
+   {v:"ai1",label:"AI Gateway 1.x",s:"Kong Gateway 3.15 / 3.16 with AI plugins on services and routes",ex:"ai-proxy-advanced · ai-a2a-proxy · ai-mcp-proxy"}]},
  {id:"deploy",title:"Control plane",ask:"Where is the control plane?",help:s=>"<b>Kong Identity principals</b> are stored in a Konnect directory and looked up by Konnect-connected data planes only. A self-managed control plane can still validate Kong Identity tokens as a plain OIDC issuer.",options:s=>[
    {v:"konnect",label:"Konnect",s:"Hybrid or dedicated cloud data planes",tag:"rec",tagText:"Recommended"},
-   {v:"self",label:"Self-managed",s:isAI(s)?"AI Gateway entities applied with deck ai sync or the AI Manager UI":"Kong Gateway with its own control plane"}]},
+   {v:"self",label:"Self-managed",s:isAI(s)?"AI Gateway entities applied with deck ai sync or the AI Manager UI":"Kong Gateway with its own control plane (decK, Admin API, KIC)"}]},
+ {id:"version",title:"Gateway version",ask:"Which Kong Gateway version runs the data planes?",visible:s=>!isAI(s),help:s=>"3.16 adds ACL <b>allow_when</b>, plugin <b>expressions</b> (limits read from principal metadata), <b>principal</b> rate-limit identifiers and OpenTelemetry principal attributes. Principals themselves need 3.15.",options:s=>[
+   {v:"3.16",label:"Kong Gateway 3.16",s:"Principals with metadata-driven ACLs and limits",tag:"rec",tagText:"Recommended"},
+   {v:"3.15",label:"Kong Gateway 3.15",s:"Principals for authentication and attribution; groups still carry ACLs and limits"}]},
  {id:"caller",title:"Who calls",ask:"Who authenticates to the gateway?",options:s=>[
    {v:"employees",label:"Employees",s:"Humans with a corporate account",ex:"IDE, chat UI, internal portal"},
    {v:"apps",label:"Apps",s:"Services and scripts with their own credentials",ex:"back-office jobs, partner apps"},
    {v:"agents",label:"Agents",s:"AI agents acting as themselves",ex:"A2A clients, autonomous workers"},
    {v:"portal",label:"Dev Portal apps",s:"Applications that partner or external developers register in a Konnect Dev Portal",ex:"self-service, approval, API packages",
-     disabled:isAI(s)?"Dev Portal publishes APIs from API Gateway (ACE plugin).":s.deploy==="self"?"Needs a Konnect Dev Portal.":null}]},
- {id:"target",title:"Target",ask:"What do they call on the AI Gateway?",visible:isAI,options:s=>[
+     disabled:isAIany(s)?"Dev Portal applications on AI routes aren't covered by the builder yet.":s.deploy==="self"?"Needs a Konnect Dev Portal.":null}]},
+ {id:"target",title:"Target",ask:"What do they call on the AI Gateway?",visible:isAIany,options:s=>[
    {v:"models",label:"LLM models",s:"Chat, embeddings, Responses",ex:"Model → ai-proxy-advanced"},
    {v:"a2a",label:"A2A agents",s:"Remote agents behind the gateway",ex:"Agent → ai-a2a-proxy"},
    {v:"mcp",label:"MCP servers",s:"Tools exposed over MCP",ex:"MCP server → ai-mcp-proxy"}]},
@@ -242,20 +249,24 @@ const STEPS = [
    {v:"consumers",label:isAI(s)?"AI Consumers":"Kong Consumers",s:"One entity per caller in the control plane, with credentials or a mapped claim.",tag:"legacy",tagText:"Classic"}];
  }},
  {id:"access",title:"Access control",ask:"How do you decide what each caller may use?",help:s=>s.caller==="portal"?"Subscriptions are portal registrations, approved by the <b>API owner</b> or a portal admin and enforced by the ACE plugin.":`Subscriptions are owned by the <b>${isAI(s)?"AI team (models, providers, agents)":"security team"}</b>. The options show whether they need subscription groups (sub-CGs).`,options:s=>{
-   const ai=isAI(s), pr=s.record==="principals", cl=s.record==="claims";
+   const ai=isAI(s), ai1=isAI1(s), pr=s.record==="principals", cl=s.record==="claims";
    if(s.caller==="portal") return [
      {v:"portal",label:"Approved in the portal (ACE)",s:"Developers request an API or API package. The API owner approves, or the publication auto-approves. The registration is the subscription.",tag:"nocg",tagText:"No CG"}];
    const subSrc = pr?"principal metadata consumer_groups":cl?`the ${IDP[s.idp]?.groups||"groups"} claim`:"Consumer membership";
    return [
    {v:"none",label:"Any authenticated caller",s:"No per-resource subscription.",tag:"nocg",tagText:"No CG"},
-   {v:"subcg",label:"Subscription groups + ACL",s:`One sub-CG per ${ai?(s.target==="models"?"model":s.target==="a2a"?"agent":"MCP server"):"API"}. Membership from ${subSrc}.`,tag:"cg",tagText:"sub-CG"},
+   {v:"subcg",label:"Subscription groups + ACL",s:`One sub-CG per ${(ai||ai1)?(s.target==="models"?"model":s.target==="a2a"?"agent":"MCP server"):"API"}. Membership from ${subSrc}.`,tag:"cg",tagText:"sub-CG"},
    {v:"meta",label:"Principal metadata + ACL allow_when",s:"<code>allow_when: '\"orders-api\" in principal.metadata.subscriptions'</code>",tag:"nocg",tagText:"No CG",
-     disabled:!pr?"Needs Kong Identity principals.":ai?"In AI Gateway 2.2, model and agent access lists accept group names only, and the acl policy is global-only.":null},
-   {v:"claimacl",label:"Groups claim + ACL",s:ai&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
+     disabled:!pr?"Needs Kong Identity principals.":ai?"In AI Gateway 2.2, model and agent access lists accept group names only, and the acl policy is global-only.":!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
+   {v:"claimacl",label:"Groups claim + ACL",s:(ai||ai1)&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
      disabled:!cl?"Needs token claims as the identity record.":(ai&&s.target!=="mcp")?"AI Gateway auth strategies don't expose authenticated_groups_claim; model and agent ACLs need group names.":null}];
  }},
- {id:"plans",title:"Usage plans",multi:true,ask:"Which usage plans apply? Pick several if they stack.",help:s=>isAI(s)?"LLM token budgets are owned by the <b>AI team</b>.":"Per-API plans are owned by the <b>API owner</b>, BU-wide plans by the <b>org admin</b>. They use different plugins, so both apply to one caller.",options:s=>{
-   const ai=isAI(s), pr=s.record==="principals";
+ {id:"plans",title:"Usage plans",multi:true,ask:"Which usage plans apply? Pick several if they stack.",help:s=>isAIany(s)?"LLM token budgets are owned by the <b>AI team</b>.":"Per-API plans are owned by the <b>API owner</b>, BU-wide plans by the <b>org admin</b>. They use different plugins, so both apply to one caller.",options:s=>{
+   const ai=isAI(s), ai1=isAI1(s), pr=s.record==="principals";
+   if(ai1) return [
+     {v:"none",label:"No plan",s:"Only access control."},
+     {v:"llm",label:"LLM token budget per tier",s:"ai-rate-limiting-advanced on each tier-CG with identifier: credential. Policy mode has no credential matcher on 3.15/3.16, so this uses the deprecated llm_providers mode.",tag:"cg",tagText:"tier-CG",
+      disabled:s.target!=="models"?"Token budgets apply to LLM routes. Use rate-limiting-advanced on agent or MCP routes.":null}];
    if(s.caller==="portal") return [
      {v:"none",label:"No plan",s:"Only portal access control."},
      {v:"pkg",label:"API package rate limits",s:"Set on the package and per operation in Catalog. ACE enforces them, cumulatively across the package.",tag:"nocg",tagText:"No CG"},
@@ -267,19 +278,19 @@ const STEPS = [
    return [
      {v:"none",label:"No plan",s:"Only access control."},
      {v:"tier-cg",label:"Per-API plan · tier-CG",s:"rate-limiting-advanced on a tier-CG, e.g. 100 calls / 5 s per caller. The API owner owns the group.",tag:"cg",tagText:"tier-CG"},
-     {v:"tier-meta",label:"Per-API plan · metadata",s:"One rate-limiting-advanced, limit read from principal.metadata (expressions.limit).",tag:"nocg",tagText:"No CG",disabled:pr?null:"Needs Kong Identity principals."},
+     {v:"tier-meta",label:"Per-API plan · metadata",s:"One rate-limiting-advanced, limit read from principal.metadata (expressions.limit).",tag:"nocg",tagText:"No CG",disabled:!pr?"Needs Kong Identity principals.":!gw316(s)?"Plugin expressions need Kong Gateway 3.16.":null},
      {v:"bu-cg",label:"BU-wide plan · BU-CG",s:"Basic rate-limiting on each BU group, e.g. 200 / minute per caller.",tag:"cg",tagText:"BU-CG"},
-     {v:"bu-meta",label:"BU-wide plan · metadata",s:"Basic rate-limiting, limit read from principal.metadata (expressions.minute).",tag:"nocg",tagText:"No CG",disabled:pr?null:"Needs Kong Identity principals."}];
+     {v:"bu-meta",label:"BU-wide plan · metadata",s:"Basic rate-limiting, limit read from principal.metadata (expressions.minute).",tag:"nocg",tagText:"No CG",disabled:!pr?"Needs Kong Identity principals.":!gw316(s)?"Plugin expressions need Kong Gateway 3.16.":null}];
  }},
  {id:"analytics",title:"Analytics",multi:true,ask:"How will you track usage?",help:s=>"Per caller is always on. Grouping by business unit needs a dimension that analytics can read: a Consumer Group, a cost tag, or a log label.",options:s=>{
-   const ai=isAI(s), k=s.deploy==="konnect";
+   const ai=isAI(s), ai1=isAI1(s), k=s.deploy==="konnect";
    return [
      {v:"konnect",label:"Konnect Analytics",s:s.caller==="portal"?"Explorer and dashboards: application, API package, portal, status.":"Explorer and dashboards: principal, OIDC credential, consumer group, model, status.",disabled:k?null:"Needs Konnect."},
      {v:"bu",label:"Break down by business unit",disabled:s.caller==="portal"?"Portal usage groups by application, developer team or portal.":null,s:s.record==="principals"?"BU kept in principal metadata, plus a BU group or label for reporting.":"BU from the groups claim, mapped to a BU group or label."},
-     {v:"cost",label:"AI Cost Management",s:"Cost per subject and tag (Beta, US region).",disabled:!ai?"AI Gateway only.":s.target!=="models"?"Applies to LLM traffic.":!k?"Needs Konnect.":null},
-     {v:"agentan",label:"Agent analytics",s:"A2A methods, tasks, contexts and errors.",disabled:!(ai&&s.target==="a2a")?"A2A agents only.":null},
+     {v:"cost",label:"AI Cost Management",s:"Cost per subject and tag (Beta, US region).",disabled:ai1?"AI Cost Management works with AI Gateway 2.x.":!ai?"AI Gateway only.":s.target!=="models"?"Applies to LLM traffic.":!k?"Needs Konnect.":null},
+     {v:"agentan",label:"Agent analytics",s:"A2A methods, tasks, contexts and errors.",disabled:!((ai||ai1)&&s.target==="a2a")?"A2A agents only.":null},
      {v:"prom",label:"Prometheus + Grafana",s:"Service, route and model metrics. Identity labels come from a log-to-metric pipeline."},
-     {v:"otel",label:"OpenTelemetry",s:ai?"Traces and GenAI metrics to your collector.":"Request metrics with principal attributes (3.16), traces."}];
+     {v:"otel",label:"OpenTelemetry",s:ai?"Traces and GenAI metrics to your collector.":ai1?"GenAI metrics (enable_ai_metrics), traces, principal attributes on 3.16.":"Request metrics with principal attributes (3.16), traces."}];
  }}
 ];
 
@@ -358,24 +369,24 @@ function derivePortal(s){
   if(A.includes("konnect")) an.push({tool:"Konnect Analytics",where:"Observability → Explorer · Dev Portal → Analytics",dims:"application, api_package, portal, status"});
   if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:"prometheus plugin + http-log (custom_fields_by_lua: principal id) → Vector",dims:"service, route, status; application via the log pipeline"});
   if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin → collector",dims:"kong.auth.principal.id / display_name on request counts"});
-  return {ai:false,portal:true,pr:false,cl:false,co,who,idp,tgt,credClaim,groups:[],meta:{},warns,notes,auth:{plugin:"ace",mode:"portal"},authStrategy:false,an,plans:s.plans||[]};
+  return {ai:false,ai1:false,aiAny:false,portal:true,pr:false,cl:false,co,who,idp,tgt,credClaim,groups:[],meta:{},warns,notes,auth:{plugin:"ace",mode:"portal"},authStrategy:false,an,plans:s.plans||[]};
 }
 function derive(s){
   if(s.caller==="portal") return derivePortal(s);
-  const ai=isAI(s), pr=s.record==="principals", cl=s.record==="claims", co=s.record==="consumers";
+  const ai=isAI(s), ai1=isAI1(s), aiAny=ai||ai1, pr=s.record==="principals", cl=s.record==="claims", co=s.record==="consumers";
   const who=WHO[s.caller]||WHO.apps, idp=IDP[s.idp];
-  const tgt=ai?(s.target==="models"?{kind:"model",name:"gpt-large",sub:"ai-sub-gpt-large"}:s.target==="a2a"?{kind:"agent",name:"kongair",sub:"a2a-sub-kongair"}:{kind:"MCP server",name:"github-tools",sub:"mcp-sub-github"}):{kind:"API",name:"orders-api",sub:"sub-orders-api"};
+  const tgt=aiAny?(s.target==="models"?{kind:"model",name:"gpt-large",sub:"ai-sub-gpt-large"}:s.target==="a2a"?{kind:"agent",name:"kongair",sub:"a2a-sub-kongair"}:{kind:"MCP server",name:"github-tools",sub:"mcp-sub-github"}):{kind:"API",name:"orders-api",sub:"sub-orders-api"};
   const credClaim = cl||pr ? (idp?(s.caller==="employees"?idp.user:idp.app):null) : null;
   const groups=[], meta={}, warns=[], notes=[];
   const memb = pr?"principal metadata consumer_groups":cl?`${idp?idp.groups:"groups"} claim`:"Consumer membership";
-  if(s.access==="subcg") groups.push({name:tgt.sub,kind:"sub",owner:ai?"AI team":"Security team",carries:ai?`${tgt.kind} access.acls.allow`:"acl allow on the service",memb});
+  if(s.access==="subcg") groups.push({name:tgt.sub,kind:"sub",owner:aiAny?"AI team":"Security team",carries:ai?`${tgt.kind} access.acls.allow`:ai1?`acl allow on the ${tgt.kind} route`:"acl allow on the service",memb});
   if(s.access==="meta") meta.subscriptions=[tgt.name];
   const plans=s.plans||[];
   if(plans.includes("tier-cg")) groups.push({name:"tier-bronze",kind:"tier",owner:"API owner",carries:"rate-limiting-advanced 100 / 5 s",memb});
   if(plans.includes("tier-meta")) meta.rl_per_5s=100;
   if(plans.includes("bu-cg")) groups.push({name:`bu-${who.bu}`,kind:"tier",owner:"Org admin",carries:"rate-limiting 200 / minute",memb});
   if(plans.includes("bu-meta")) meta.bu_rl_minute=200;
-  if(plans.includes("llm")) groups.push({name:"ai-tier-standard",kind:"tier",owner:"AI team",carries:"rule in the global ai-rate-limiting-advanced",memb});
+  if(plans.includes("llm")) groups.push({name:"ai-tier-standard",kind:"tier",owner:"AI team",carries:ai1?"ai-rate-limiting-advanced (identifier: credential)":"rule in the global ai-rate-limiting-advanced",memb});
   const buDim = (s.analytics||[]).includes("bu");
   if(buDim && !groups.some(g=>g.name.startsWith("bu-")) && (s.analytics.includes("konnect")||ai)) groups.push({name:`bu-${who.bu}`,kind:"bu",owner:ai?"AI team":"Org admin",carries:"nothing: lets analytics group by BU",memb});
   if(pr){ meta.bu=who.bu; if(groups.length) meta.consumer_groups=groups.map(g=>g.name); }
@@ -388,6 +399,9 @@ function derive(s){
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model or agent: callers from another issuer need their own route.");
   if(ai) warns.push("AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first.");
   if(!ai && auth.plugin==="openid-connect") warns.push("Gateway 3.16 rejects the config if openid-connect has ssl_verify: false. Keep it true and set cache_tokens_salt for decK.");
+  if(ai1 && oidcLike(s)) notes.push("Plain openid-connect accepts several issuers on one route (issuers_allowed + extra_jwks_uris), unlike AI Gateway 2.x auth strategies.");
+  if(ai1 && plans.includes("llm")) warns.push("ai-rate-limiting-advanced policy mode has no credential matcher on 3.15/3.16: per-caller budgets without Consumers use the deprecated llm_providers mode with identifier: credential.");
+  if(ai1 && s.target==="a2a") notes.push("ai-a2a-proxy needs Kong Gateway 3.14+ and is generally available.");
   if(s.idp==="entra" && cl) warns.push("Entra ID groups are object IDs. Use app roles (roles claim) and name the groups after the roles.");
   if(pr) warns.push("Principals are cached on the data plane (10 min by default): metadata changes are not instant.");
   if(pr && groups.length && s.access!=="meta") warns.push("Two teams write the same metadata key (consumer_groups). Run membership changes through one provisioning pipeline.");
@@ -398,13 +412,13 @@ function derive(s){
   // analytics plan
   const an=[];
   const A=s.analytics||[];
-  if(A.includes("konnect")) an.push({tool:"Konnect Analytics",where:"Observability → Explorer, or /v2/api-requests",dims:[pr?"principal":cl?"oidc_credential":"consumer", ...(groups.length?["consumer group"]:[]), ...(ai?["model","provider","tokens"]:["route","status"])].join(", ")});
+  if(A.includes("konnect")) an.push({tool:"Konnect Analytics",where:"Observability → Explorer, or /v2/api-requests",dims:[pr?"principal":cl?"oidc_credential":"consumer", ...(groups.length?["consumer group"]:[]), ...(aiAny?["model","provider","tokens"]:["route","status"])].join(", ")});
   if(A.includes("cost")) an.push({tool:"AI Cost Management (Beta)",where:"Applications → AI Cost Management · global pre-function for ai-cost-* tags",dims:`subject ${pr?"principal/<uuid>":cl?"oidc/<"+credClaim+">":"consumer/<uuid>"}, tags${buDim?" incl. bu":""}`});
   if(A.includes("agentan")) an.push({tool:"Agent analytics",where:"Konnect Analytics · ai-a2a-proxy logging.statistics",dims:"method, task, context, error, principal"});
-  if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:ai?"prometheus policy (AI metrics) + http-log → Vector → Prometheus for identity labels":"prometheus plugin + http-log (custom_fields_by_lua) → Vector log_to_metric",dims:ai?"model, provider, tokens; caller and BU via the log pipeline":"service, route, status; caller and BU via the log pipeline"});
-  if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin/policy → collector",dims:!ai&&pr?"kong.auth.principal.display_name on request counts":ai?"gen_ai.* metrics, traces":"traces, request metrics"});
+  if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:ai?"prometheus policy (AI metrics) + http-log → Vector → Prometheus for identity labels":ai1?"prometheus plugin (ai_metrics: true) + http-log → Vector for identity labels":"prometheus plugin + http-log (custom_fields_by_lua) → Vector log_to_metric",dims:aiAny?"model, provider, tokens; caller and BU via the log pipeline":"service, route, status; caller and BU via the log pipeline"});
+  if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin/policy → collector",dims:!ai&&pr&&gw316(s)?`kong.auth.principal.display_name on request counts${ai1?", gen_ai.* metrics":""}`:aiAny?"gen_ai.* metrics, traces":"traces, request metrics"});
   if(buDim && pr && !groups.some(g=>g.kind==="bu"||g.name.startsWith("bu-"))) notes.push("Principal metadata isn't an analytics dimension: keep a BU group or a log label to report by BU.");
-  return {ai,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans};
+  return {ai,ai1,aiAny,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans};
 }
 
 /* lab-validated combinations */
@@ -414,9 +428,9 @@ function labMatch(s){ // core path (record, auth, access, plans) run end to end 
   if(eq({product:"ai",deploy:"konnect",caller:"employees",target:"models",cred:"oidc",idp:"keycloak",record:"claims",access:"subcg",plans:["llm"]})) return "AI-1";
   if(eq({product:"ai",deploy:"konnect",caller:"apps",target:"models",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["llm"]})) return "AI-2";
   if(eq({product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"]})) return "AI-3";
-  if(eq({product:"api",deploy:"konnect",caller:"apps",cred:"apikey",record:"principals",access:"subcg",plans:["tier-cg"]})||
-     eq({product:"api",deploy:"konnect",caller:"apps",cred:"apikey",record:"principals",access:"subcg",plans:["tier-cg","bu-cg"]})) return "API-1";
-  if(eq({product:"api",deploy:"konnect",caller:"employees",cred:"oidc",idp:"keycloak",record:"claims",access:"subcg",plans:["bu-cg"]})) return "API-2";
+  if(eq({product:"api",deploy:"konnect",version:"3.16",caller:"apps",cred:"apikey",record:"principals",access:"subcg",plans:["tier-cg"]})||
+     eq({product:"api",deploy:"konnect",version:"3.16",caller:"apps",cred:"apikey",record:"principals",access:"subcg",plans:["tier-cg","bu-cg"]})) return "API-1";
+  if(eq({product:"api",deploy:"konnect",version:"3.16",caller:"employees",cred:"oidc",idp:"keycloak",record:"claims",access:"subcg",plans:["bu-cg"]})) return "API-2";
   return null;
 }
 
@@ -430,7 +444,7 @@ function renderBlueprint(){
      <div class="kpi ${nCG?"warn":"good"}"><b>${nCG}</b><span>Consumer Groups to create</span></div>
      <div class="kpi ${S.record==="consumers"?"warn":"good"}"><b>${S.record==="consumers"?"Yes":S.record?"0":"–"}</b><span>${d.ai?"AI Consumers":"Consumers"}</span></div>
      <div class="kpi"><b>${d.pr?"Yes":d.portal&&S.record==="portalapp"?"Auto":S.record?"No":"–"}</b><span>KI principals</span></div>
-     <div class="kpi"><b>${d.ai?(S.cred?"Yes":"–"):"n/a"}</b><span>Auth strategy</span></div>
+     <div class="kpi"><b>${d.ai?(S.cred?"Yes":"–"):"n/a"}</b><span>${d.ai?"Auth strategy":"Auth strategy (2.x only)"}</span></div>
    </div>
    ${nCG?`<div><h3>Groups</h3><ul class="plain">${d.groups.map(g=>`<li><span><code>${g.name}</code> · ${g.owner}</span></li>`).join("")}</ul></div>`:""}
    ${Object.keys(d.meta).length&&d.pr?`<div><h3>Principal metadata</h3><pre class="code" style="max-height:none;padding:8px">${esc(JSON.stringify(d.meta,null,1))}</pre></div>`:""}
@@ -468,13 +482,13 @@ function buildSeqPortal(s,d){
 function buildSeq(s,d){
   if(d.portal) return buildSeqPortal(s,d);
   const lanes=[], steps=[];
-  const who=d.who, ai=d.ai;
+  const who=d.who, ai=d.aiAny, ver=s.version||"3.16";
   lanes.push(L("c",who.label,who.name,"actor"));
   const tokenFlow=oidcLike(s);
   if(tokenFlow) lanes.push(L("idp",d.idp.label,"OAuth server","idp"));
   if(d.pr) lanes.push(L("dir","KI directory","principals","store"));
   const authLabel=d.auth.plugin;
-  lanes.push(L("auth",authLabel,ai?"AuthStrategy":d.auth.mode==="principals"?"principals mode":"plugin","plugin"));
+  lanes.push(L("auth",authLabel,d.ai?"AuthStrategy":d.auth.mode==="principals"?"principals mode":"plugin","plugin"));
   if(s.access&&s.access!=="none") lanes.push(L("acl","acl",s.access==="meta"?"allow_when":s.access==="claimacl"?"groups claim":"sub-CG","plugin"));
   const rl=[];
   if(d.plans.includes("llm")) rl.push(L("rla","ai-rate-limit-adv","token budget","plugin"));
@@ -493,7 +507,7 @@ function buildSeq(s,d){
   } else if(d.pr) steps.push({f:"dir",t:"c",l:"API key (issued once)",h:"Key issued by Kong Identity",p:"Generated in the directory and shown once. Only a hash is stored."});
   else steps.push({f:"auth",t:"c",l:"API key (Consumer credential)",h:"Key stored on a Consumer",p:"Classic model: the key lives in the control plane config."});
   const target = ai?(s.target==="models"?"POST /v1/chat/completions":s.target==="a2a"?"GET …/agent-card.json":"POST /mcp (tools/call)"):"GET /orders";
-  steps.push({f:"c",t:"auth",l:`${target}${tokenFlow?" · Bearer":" · apikey"}`,h:"Call through the gateway",p:ai?"On AI Gateway the AuthStrategy is the only way to authenticate a model, agent or MCP server.":"The auth plugin runs first (highest priority)."});
+  steps.push({f:"c",t:"auth",l:`${target}${tokenFlow?" · Bearer":" · apikey"}`,h:"Call through the gateway",p:d.ai?"On AI Gateway 2.x the AuthStrategy is the only way to authenticate a model, agent or MCP server.":d.ai1?"A plain auth plugin on the AI route, like any Kong Gateway route.":"The auth plugin runs first (highest priority)."});
   if(tokenFlow) steps.push({f:"auth",t:"auth",l:"verify signature (JWKS)",h:"Token verified",p:"Issuer, audience and expiry checked locally; JWKS cached."});
   if(d.cl) steps.push({f:"auth",t:"auth",l:`credential_claim → '${s.caller==="employees"?who.name:"<client_id>"}'`,h:"Virtual credential, no Consumer",p:"The claim becomes ctx.authenticated_credential. No Consumer lookup happens.",set:{credential:`{ id: "${s.caller==="employees"?who.name:"<client_id>"}" }  (virtual)`}});
   if(d.pr){
@@ -508,8 +522,8 @@ function buildSeq(s,d){
     steps.push({f:prev,t:"acl",l:`${why} ✓`,h:"Subscription check",p:"A caller without the subscription gets a 403 here.",set:{decision:"acl: allowed"}}); prev="acl";
   }
   for(const r of rl){
-    const txt = r.sub==="token budget"?"tier rule · partition by credential":r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
-    steps.push({f:prev,t:r.id,l:txt,h:r.sub==="token budget"?"LLM token budget":r.sub==="API plan"?"API usage plan (API owner)":"BU-wide plan (org admin)",p:r.sub==="token budget"?"One global policy; its rules match tier groups, so a caller in several groups never conflicts.":"Over the limit returns 429.",set:{decision:"acl: allowed\n"+r.label+": within limit"}}); prev=r.id;
+    const txt = r.sub==="token budget"?(d.ai1?"CG ai-tier-standard · identifier credential":"tier rule · partition by credential"):r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
+    steps.push({f:prev,t:r.id,l:txt,h:r.sub==="token budget"?"LLM token budget":r.sub==="API plan"?"API usage plan (API owner)":"BU-wide plan (org admin)",p:r.sub==="token budget"?(d.ai1?"ai-rate-limiting-advanced scoped to the tier group, one counter per credential (llm_providers mode).":"One global policy; its rules match tier groups, so a caller in several groups never conflicts."):"Over the limit returns 429.",set:{decision:"acl: allowed\n"+r.label+": within limit"}}); prev=r.id;
   }
   steps.push({f:prev,t:ai?"px":"up",l:ai?"":"proxied",h:ai?"Gateway-side protocol handling":"Proxied",p:""});
   if(ai){
@@ -527,7 +541,7 @@ function buildSeq(s,d){
   const lastSet = d.an.length?{analytics:d.an.map(a=>`${a.tool}: ${a.dims}`).join("\n")}:null;
   if(lastSet) steps[steps.length-1].set=Object.assign({},steps[steps.length-1].set||{},lastSet);
   steps[steps.length-1].p = steps[steps.length-1].p || "Usage is attributed without a Consumer when the record is claims or principals.";
-  const band = ai?`KONG AI GATEWAY · ${d.tgt.kind.toUpperCase()} ${d.tgt.name}`:`KONG GATEWAY 3.16 · SERVICE ${d.tgt.name}`;
+  const band = d.ai?`KONG AI GATEWAY 2.2 · ${d.tgt.kind.toUpperCase()} ${d.tgt.name}`:d.ai1?`KONG GATEWAY ${ver} + AI PLUGINS · ${d.tgt.kind.toUpperCase()} ROUTE ${d.tgt.name}`:`KONG GATEWAY ${ver} · SERVICE ${d.tgt.name}`;
   return {lanes,steps,band};
 }
 
@@ -559,8 +573,81 @@ ${rl&&!d.co?`  - name: rate-limiting-advanced        # per-application plan (pri
       metrics: { endpoint: http://otel-collector:4318/v1/metrics, enable_request_metrics: true, enable_principal_attribute: true }
 `:""}`};
 }
+function genDeclarativeAI1(s,d){
+  const iss=d.idp?d.idp.issuer:"", g=d.groups, A=s.analytics||[];
+  const cg=g.map(x=>{
+    let plug="";
+    if(x.name==="ai-tier-standard") plug=`
+    plugins:
+      - name: ai-rate-limiting-advanced    # AI team · one token budget per caller credential
+        config:
+          identifier: credential
+          strategy: local
+          tokens_count_strategy: total_tokens
+          llm_providers: [{ name: openai, limit: [10000], window_size: [3600] }]`;
+    return `  - name: ${x.name}            # ${x.kind} · ${x.owner}${plug}`;
+  });
+  const auth = d.auth.plugin==="openid-connect"?`      - name: openid-connect
+        config:
+          issuer: ${iss}/.well-known/openid-configuration
+          auth_methods: [bearer]
+          audience_required: [kong-gateway]
+${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&g.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: false\n`:""}${s.access==="claimacl"&&s.target!=="mcp"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
+          ssl_verify: true`:`      - name: key-auth
+        config:
+          key_names: [apikey]
+${d.pr?"          identity_realms: []\n          principals: { enabled: true, directory: default }":"          hide_credentials: true"}`;
+  let acl="";
+  if(s.access==="subcg"&&s.target!=="mcp") acl=`\n      - name: acl\n        config: { allow: [${d.tgt.sub}], include_consumer_groups: true }`;
+  if(s.access==="meta") acl=`\n      - name: acl\n        config:\n          allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions']`;
+  if(s.access==="claimacl"&&s.target!=="mcp") acl=`\n      - name: acl\n        config: { allow: [${d.tgt.name}-users] }   # group names from authenticated_groups_claim`;
+  let svc;
+  if(s.target==="models") svc=`  - name: llm-${d.tgt.name}
+    url: https://api.openai.com          # ai-proxy-advanced overrides the upstream
+    routes: [{ name: ${d.tgt.name}, paths: [/v1/chat/completions] }]
+    plugins:
+${auth}${acl}
+      - name: ai-proxy-advanced
+        config:
+          targets:
+            - route_type: llm/v1/chat
+              auth: { header_name: Authorization, header_value: "Bearer {vault://env/openai-key}" }
+              model: { provider: openai, name: gpt-4.1 }
+          logging: { log_statistics: true, log_payloads: false }`;
+  else if(s.target==="a2a") svc=`  - name: agent-${d.tgt.name}
+    url: http://kongair-agent.internal:10000/
+    routes: [{ name: ${d.tgt.name}, paths: [/agents/${d.tgt.name}] }]
+    plugins:
+${auth}${acl}
+      - name: ai-a2a-proxy
+        config: { logging: { log_statistics: true, log_payloads: false } }
+      - name: post-function                # skill allowance from the JWT claim allowed_skills
+        config:
+          header_filter: ['kong.response.clear_header("Content-Length")']
+          body_filter: ['<trim-agent-card.lua>']`;
+  else svc=`  - name: mcp-${d.tgt.name}
+    url: https://mcp.github.example/mcp
+    routes: [{ name: ${d.tgt.name}, paths: [/mcp/github] }]
+    plugins:
+${auth}
+      - name: ai-mcp-proxy
+        config:
+          mode: passthrough-listener
+${s.access==="claimacl"?`          acl_attribute_type: oauth_access_token\n          access_token_claim_field: .${d.idp.groups}\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:s.access==="subcg"?`          include_consumer_groups: true\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:"          # no tool ACLs"}`;
+  const glob=[];
+  if(A.includes("prom")) glob.push(`  - name: prometheus\n    config: { ai_metrics: true, status_code_metrics: true }`);
+  if(A.includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, enable_ai_metrics: true, enable_request_metrics: true${d.pr&&gw316(s)?", enable_principal_attribute: true":""} }`);
+  const consumers = d.co?`consumers:\n  - username: ${d.who.name}\n${d.auth.plugin==="key-auth"?"    keyauth_credentials: [{ key: \"<generated>\" }]\n":`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${g.length?`    groups: [${g.map(x=>`{ name: ${x.name} }`).join(", ")}]\n`:""}`:"";
+  return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-ai":""}
+# Kong Gateway ${s.version||"3.16"} + AI plugins (AI Gateway 1.x)
+_format_version: "3.0"
+${cg.length?`consumer_groups:\n${cg.join("\n")}\n`:""}${consumers}services:
+${svc}
+${glob.length?`plugins:\n${glob.join("\n")}\n`:""}`};
+}
 function genDeclarative(s,d){
   if(d.portal) return genDeclarativePortal(s,d);
+  if(d.ai1) return genDeclarativeAI1(s,d);
   const iss = d.idp?d.idp.issuer:"";
   if(d.ai){
     const strat = d.auth.plugin==="openid-connect"
@@ -716,7 +803,7 @@ function genApi(s,d){
 AS=$(curl -s -X POST $KONNECT_API/v1/auth-servers -H "$H" -H 'content-type: application/json' \\
   -d '{"name":"acme","audience":"kong-gateway"}' | jq -r .id)
 SCOPE=$(curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/scopes -H "$H" -H 'content-type: application/json' \\
-  -d '{"name":"${d.ai?"llm.invoke":"orders.read"}","enabled":true}' | jq -r .id)
+  -d '{"name":"${d.aiAny?"llm.invoke":"orders.read"}","enabled":true}' | jq -r .id)
 curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/clients -H "$H" -H 'content-type: application/json' \\
   -d '{"name":"${d.who.name}","grant_types":["client_credentials"],"response_types":["token"],
        "allow_scopes":["'$SCOPE'"],"labels":{"app":"${d.who.name}"${s.target==="a2a"?',"skills":"search_flights.get_booking"':""}}}'   # client_secret returned once`);
@@ -830,7 +917,7 @@ function genTf(s,d){
 }
 resource "konnect_identity_auth_server_scope" "invoke" {
   auth_server_id = konnect_identity_auth_server.acme.id
-  name           = "${d.ai?"llm.invoke":"orders.read"}"
+  name           = "${d.aiAny?"llm.invoke":"orders.read"}"
   enabled        = true
 }
 resource "konnect_identity_auth_server_client" "${d.who.name.replace(/-/g,"_")}" {
@@ -849,6 +936,71 @@ resource "konnect_identity_auth_server_client" "${d.who.name.replace(/-/g,"_")}"
 }
 # Principals, their metadata and identities have no Terraform resource yet:
 # create them with the Konnect API calls (see the Konnect API tab).`);
+  if(d.ai1){
+    t.push(`resource "konnect_gateway_control_plane" "acme" {
+  name         = "acme-ai"
+  cluster_type = "CLUSTER_TYPE_CONTROL_PLANE"
+  auth_type    = "pki_client_certs"
+}`);
+    d.groups.forEach(g=>t.push(`resource "konnect_gateway_consumer_group" "${g.name.replace(/-/g,"_")}" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  name             = "${g.name}"        # ${g.kind} · ${g.owner}
+}`));
+    const oc=d.auth.plugin==="openid-connect", route=`{ id = "<${d.tgt.name} route id>" }`;
+    t.push(`resource "konnect_gateway_plugin_${oc?"openid_connect":"key_auth"}" "auth" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  route            = ${route}
+  config = {
+${oc?`    issuer            = "${d.idp.issuer}/.well-known/openid-configuration"
+    auth_methods      = ["bearer"]
+    audience_required = ["kong-gateway"]
+${d.cl||d.pr?`    credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`    consumer_groups_claim = ["${d.idp.groups}"]\n`:""}    ssl_verify        = true`:`    key_names       = ["apikey"]\n    identity_realms = []`}
+${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
+  }
+}`);
+    if(s.access==="subcg"&&s.target!=="mcp") t.push(`resource "konnect_gateway_plugin_acl" "subscription" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  route            = ${route}
+  config           = { allow = ["${d.tgt.sub}"], include_consumer_groups = true }
+}`);
+    if(s.access==="meta") t.push(`resource "konnect_gateway_plugin_acl" "subscription" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  route            = ${route}
+  config           = { allow_when = ["\\"${d.tgt.name}\\" in principal.metadata.subscriptions"] }
+}`);
+    if(s.target==="models") t.push(`resource "konnect_gateway_plugin_ai_proxy_advanced" "${d.tgt.name.replace(/-/g,"_")}" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  route            = ${route}
+  config = {
+    targets = [{
+      route_type = "llm/v1/chat"
+      auth       = { header_name = "Authorization", header_value = "Bearer {vault://env/openai-key}" }
+      model      = { provider = "openai", name = "gpt-4.1" }
+    }]
+  }
+}`);
+    if(s.target==="a2a") t.push(`resource "konnect_gateway_plugin_ai_a2a_proxy" "${d.tgt.name}" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  route            = ${route}
+  config           = { logging = { log_statistics = true } }
+}`);
+    if(s.target==="mcp") t.push(`resource "konnect_gateway_plugin_ai_mcp_proxy" "${d.tgt.name.replace(/-/g,"_")}" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  route            = ${route}
+  config           = { mode = "passthrough-listener" }
+}`);
+    if(d.plans.includes("llm")) t.push(`resource "konnect_gateway_plugin_ai_rate_limiting_advanced" "tier_standard" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  consumer_group   = { id = konnect_gateway_consumer_group.ai_tier_standard.id }
+  config = {
+    identifier            = "credential"
+    strategy              = "local"
+    tokens_count_strategy = "total_tokens"
+    llm_providers         = [{ name = "openai", limit = [10000], window_size = [3600] }]
+  }
+}`);
+    return {lang:"hcl",title:"Terraform",text:t.join("\n\n")};
+  }
   if(d.ai){
     t.push(`resource "konnect_ai_gateway" "acme" {
   name            = "acme-aigw"
@@ -995,9 +1147,12 @@ function renderResult(){
   r.hidden=false; const d=derive(S); seq=buildSeq(S,d);
   const lab=labMatch(S);
   const CFG={decl:genDeclarative(S,d),api:genApi(S,d),tf:genTf(S,d)};
+  // Terraform targets Konnect only; the Konnect API tab only shows when there is something to call.
+  const tabs=["decl",...(/Nothing to call/.test(CFG.api.text)?[]:["api"]),...(S.deploy==="konnect"?["tf"]:[])];
+  if(!tabs.includes(tab)) tab="decl";
   const summary=[
-    ["Product",`${S.product==="ai"?"AI Gateway 2.2":"Kong Gateway 3.16"} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
-    ["Caller",`${WHO[S.caller].label}s${d.ai?" → "+d.tgt.kind+"s":d.portal?" → API package "+d.tgt.pkg:""}`],
+    ["Product",`${S.product==="ai"?"AI Gateway 2.2":S.product==="ai1"?`Kong Gateway ${S.version} + AI plugins (AI Gateway 1.x)`:`Kong Gateway ${S.version}`} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
+    ["Caller",`${WHO[S.caller].label}s${d.aiAny?" → "+d.tgt.kind+"s":d.portal?" → API package "+d.tgt.pkg:""}`],
     ["Credential",S.cred==="apikey"?(d.portal?"Portal-issued API keys":"API keys"):`${S.cred==="oidc"?"OIDC login":d.portal?"OAuth client credentials via DCR":"OAuth client credentials"} · ${d.idp.label}`],
     ["Identity record",S.record==="claims"?`Token claims (virtual credential ${d.credClaim})`:S.record==="principals"?"Kong Identity principals":S.record==="portalapp"?"Portal application (auto-created principal)":"Consumers"],
     ["Auth",d.portal?`ace + application auth strategy (${S.cred==="cc"?"OIDC with DCR":"key-auth"})`:d.ai?`AuthStrategy ${d.auth.plugin}${d.pr?" + principals":""}`:`${d.auth.plugin}${d.pr?" (principals)":""}`],
@@ -1020,7 +1175,7 @@ function renderResult(){
    </div>
    <div class="panel"><div class="tabs" role="tablist">
        <button role="tab" data-t="decl">${d.ai?(S.deploy==="konnect"?"kongctl":"deck ai sync"):"decK"}</button>
-       <button role="tab" data-t="api">Konnect API</button><button role="tab" data-t="tf">Terraform</button></div>
+       ${tabs.includes("api")?`<button role="tab" data-t="api">Konnect API</button>`:""}${tabs.includes("tf")?`<button role="tab" data-t="tf">Terraform</button>`:""}</div>
      <div class="codewrap"><button class="btn copy" id="bcopy">Copy</button><pre class="code" id="code"></pre></div></div>`;
   drawSeq(); moveTo(seq.steps.length-1,false);
   document.getElementById("bp").onclick=()=>playing?stop():play();
@@ -1036,7 +1191,7 @@ function render(){
   if(!visibleSteps().some(s=>s.id===cur)) cur=visibleSteps()[0].id;
   renderStepper(); renderQuestion(); renderBlueprint(); renderResult(); save();
 }
-document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";render()};
+document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";render()};
 document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
 try{const st=JSON.parse(localStorage.getItem("iwb")||"null");if(st&&st.S){Object.assign(S,st.S);cur=st.cur||"product";prune()}}catch(e){}

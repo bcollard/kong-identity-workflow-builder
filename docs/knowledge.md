@@ -1,6 +1,6 @@
 # Knowledge behind the builder
 
-Product facts the wizard relies on. Versions: Kong Gateway 3.16, AI Gateway 2.2, Konnect (2026-10).
+Product facts the wizard relies on. Versions: Kong Gateway 3.15 / 3.16 (incl. AI plugins, "AI Gateway 1.x"), AI Gateway 2.2, Konnect (2026-10).
 Each fact names its source: Kong docs (developer.konghq.com), the Kong Gateway source, the Konnect Terraform
 provider, or a lab run (`lab-verified`). Check the source before changing a rule in `site/index.html`.
 
@@ -76,6 +76,22 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   (runs after the proxy: priority −1000 < 819) reading `kong.client.get_jwt_token_payload()`; the strict sandbox has no
   `setmetatable` (use `cjson.empty_array`). A2A `message/send` carries no skill id, so trimming governs discovery only.
 - MCP tool ACLs can read a token claim directly: `acl_attribute_type: oauth_access_token` + `access_token_claim_field`.
+
+## AI Gateway 1.x (Kong Gateway + AI plugins)
+
+AI plugins configured as ordinary plugins on services and routes (decK, Admin API, Konnect control planes, KIC).
+
+| Topic | AI Gateway 1.x (Gateway 3.15 / 3.16) | AI Gateway 2.x (2.2) |
+|---|---|---|
+| Authentication | Any auth plugin on the route. One `openid-connect` can accept several issuers (`issuers_allowed` + `extra_jwks_uris`) | AuthStrategy only, one `openid-connect` strategy per model |
+| Subscriptions without groups | ACL `allow_when` on principal metadata (3.16), or `authenticated_groups_claim` | Not possible: access lists take group names |
+| Token budgets | `ai-rate-limiting-advanced` policy mode (3.14+) matches `consumer`, `consumer_group`, `ip`, `header`, `path`, `model`, `provider` only; counters come from matched values. Per caller without Consumers: deprecated `llm_providers` mode with `identifier: credential`, scoped to a tier group | Global policy, `consumer_group` match + `credential` partition |
+| A2A / MCP | `ai-a2a-proxy` (3.14+), `ai-mcp-proxy` (`passthrough-listener`, `default_acl: [{scope: tools, allow, deny}]`), `ai-mcp-oauth2` (3.12+) | Agent and MCP server entities |
+| Metrics | Prometheus `ai_metrics: true`; OTel `enable_ai_metrics` (+ principal attribute on 3.16) | prometheus / opentelemetry policies |
+| AI Cost Management | Not available (AI Gateway 2.x only) | Beta, US |
+| Terraform | `konnect_gateway_plugin_ai_proxy_advanced`, `_ai_rate_limiting_advanced`, `_ai_a2a_proxy`, `_ai_mcp_proxy`, `_ai_mcp_oauth2` | `konnect_ai_gateway_*` |
+
+None of the 1.x paths has been run in a lab yet.
 
 ## Dev Portal applications
 

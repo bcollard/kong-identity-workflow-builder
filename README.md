@@ -2,7 +2,7 @@
 
 A static, single-page wizard that turns a few answers into a Kong identity blueprint:
 
-1. Product (API Gateway 3.16 or AI Gateway 2.2) and control plane (Konnect or self-managed)
+1. Product (API Gateway, AI Gateway 1.x = Kong Gateway + AI plugins, or AI Gateway 2.x), control plane (Konnect or self-managed) and Gateway version (3.15 / 3.16)
 2. Who calls (employees, apps, agents, Dev Portal applications) and, on AI Gateway, what they call (models, A2A agents, MCP servers)
 3. Credential (OIDC login, OAuth client credentials, API keys) and OAuth server (Kong Identity, Okta, Entra ID, Keycloak, AD FS)
 4. Identity record (token claims, Kong Identity principals, Consumers)

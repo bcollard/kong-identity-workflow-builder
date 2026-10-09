@@ -8,7 +8,8 @@
   2. Dev Portal applications (key-auth and DCR with Kong Identity), ACE with `if_present`, per-app `condition`.
   3. Okta, Entra ID and AD FS claim names (`sub` / `azp` / `appid`, `groups` / `roles` / `group`).
   4. AI Gateway MCP servers with token-claim tool ACLs.
-  5. AI Cost Management subjects and tags (needs an org enabled for the Beta and model prices).
+  5. AI Gateway 1.x on 3.16 and 3.15: OIDC multi-issuer, ACL allow_when on model routes, ai-rate-limiting-advanced llm_providers mode with identifier: credential, ai-mcp-proxy tool ACLs from a claim.
+  6. AI Cost Management subjects and tags (needs an org enabled for the Beta and model prices).
 - Add a "copy all" export (zip or single markdown) of the generated config.
 
 ## Wizard variables not covered yet
@@ -21,6 +22,8 @@
 | mTLS clients | Certificate-bound callers; principal identity by certificate |
 | Several control planes or environments | Consumer Group UUIDs per control plane vs names in principal metadata |
 | Self-managed AI Gateway | `deck ai sync` output instead of kongctl, no principals |
+| Self-managed Terraform | The Terraform tab is hidden for self-managed control planes; the `kong/kong-gateway` provider could fill it |
+| Dev Portal apps on AI routes | ACE on a control plane that also carries AI plugins |
 
 ## Generated config gaps
 
