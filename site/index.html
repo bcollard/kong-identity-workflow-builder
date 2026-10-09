@@ -188,7 +188,8 @@ const IDP = {
 const WHO = {
   employees:{name:"alice",label:"Employee",sub:"Claude Code · web app",bu:"finance"},
   apps:{name:"invoice-bot",label:"Client app",sub:"service",bu:"finance"},
-  agents:{name:"travel-planner",label:"AI agent",sub:"A2A client",bu:"travel"}
+  agents:{name:"travel-planner",label:"AI agent",sub:"A2A client",bu:"travel"},
+  portal:{name:"acme-partner-app",label:"Portal app",sub:"partner developer",bu:"partners"}
 };
 
 /* ---------- wizard definition ---------- */
@@ -206,12 +207,17 @@ const STEPS = [
  {id:"caller",title:"Who calls",ask:"Who authenticates to the gateway?",options:s=>[
    {v:"employees",label:"Employees",s:"Humans with a corporate account",ex:"IDE, chat UI, internal portal"},
    {v:"apps",label:"Apps",s:"Services and scripts with their own credentials",ex:"back-office jobs, partner apps"},
-   {v:"agents",label:"Agents",s:"AI agents acting as themselves",ex:"A2A clients, autonomous workers"}]},
+   {v:"agents",label:"Agents",s:"AI agents acting as themselves",ex:"A2A clients, autonomous workers"},
+   {v:"portal",label:"Dev Portal apps",s:"Applications that partner or external developers register in a Konnect Dev Portal",ex:"self-service, approval, API packages",
+     disabled:isAI(s)?"Dev Portal publishes APIs from API Gateway (ACE plugin).":s.deploy==="self"?"Needs a Konnect Dev Portal.":null}]},
  {id:"target",title:"Target",ask:"What do they call on the AI Gateway?",visible:isAI,options:s=>[
    {v:"models",label:"LLM models",s:"Chat, embeddings, Responses",ex:"Model → ai-proxy-advanced"},
    {v:"a2a",label:"A2A agents",s:"Remote agents behind the gateway",ex:"Agent → ai-a2a-proxy"},
    {v:"mcp",label:"MCP servers",s:"Tools exposed over MCP",ex:"MCP server → ai-mcp-proxy"}]},
  {id:"cred",title:"Credential",ask:"How do they prove who they are?",options:s=>{
+   if(s.caller==="portal") return [
+     {v:"cc",label:"OAuth client credentials (DCR)",s:"The portal registers each application as a client in your IdP (dynamic client registration).",ex:"Kong Identity · Okta · Entra ID · Auth0 · Curity",tag:"rec",tagText:"Recommended"},
+     {v:"apikey",label:"Portal-issued API keys",s:"Key-auth application auth strategy: developers generate keys in the portal.",ex:"strategy_type: key_auth"}];
    if(s.caller==="employees") return [
      {v:"oidc",label:"OIDC login",s:"Interactive sign-in at the corporate IdP (authorization code, device code)",ex:"Okta · Entra ID · Keycloak · AD FS",tag:"rec",tagText:"Recommended"},
      {v:"apikey",label:"API keys",s:"A personal key per employee",ex:"key-auth",why:"Shared secrets for humans don't follow leavers or MFA. Use only for tooling that can't do OAuth."}];
@@ -220,9 +226,13 @@ const STEPS = [
      {v:"apikey",label:"API keys",s:"A long-lived key sent on every call",ex:"key-auth",why:s.caller==="agents"?"Agents should use short-lived tokens. Keep keys for legacy clients.":null}];
  }},
  {id:"idp",title:"OAuth server",ask:"Which server issues the tokens?",visible:oidcLike,help:s=>s.idp?IDP[s.idp].note:"Pick the issuer. The builder adapts claims, group mapping and principal lookup to it.",options:s=>Object.entries(IDP).map(([k,d])=>({v:k,label:d.label,s:d.ex,ex:d.issuer,
-   disabled:(k==="ki"&&s.caller==="employees")?"Kong Identity issues machine tokens. Interactive employee sign-in isn't generally available, so federate employees from your corporate IdP.":null}))},
+   disabled:(k==="ki"&&s.caller==="employees")?"Kong Identity issues machine tokens. Interactive employee sign-in isn't generally available, so federate employees from your corporate IdP."
+     :(s.caller==="portal"&&(k==="keycloak"||k==="adfs"))?"Not a built-in Dev Portal DCR provider. Use the HTTP DCR bridge.":null}))},
  {id:"record",title:"Identity record",ask:"Where does Kong find the caller's identity and groups?",help:s=>"This choice decides whether Consumer Groups are still required. <b>Token claims</b> keep everything in the IdP. <b>Kong Identity principals</b> add a central record with metadata, independent of the issuer. <b>Consumers</b> are the classic per-control-plane entities.",options:s=>{
    const k=s.deploy==="konnect", key=s.cred==="apikey";
+   if(s.caller==="portal") return [
+     {v:"portalapp",label:"Portal application",s:"The portal creates a Kong Identity principal per application (principal ID = application ID). Credentials stay with the auth strategy.",tag:"rec",tagText:"Recommended"},
+     {v:"consumers",label:"Mapped to a Consumer",s:"Map the application to an existing Consumer to reuse Consumer-scoped plugins.",tag:"legacy",tagText:"Classic"}];
    const recPrinc = k && (s.caller!=="employees" || key);
    return [
    {v:"claims",label:"Token claims only",s:`Virtual credential from ${s.idp?"<code>"+(s.caller==="employees"?IDP[s.idp].user:IDP[s.idp].app)+"</code>":"a claim"}, groups from <code>${s.idp?IDP[s.idp].groups:"groups"}</code>. Nothing stored in Kong.`,
@@ -231,8 +241,10 @@ const STEPS = [
      disabled:k?null:"Principals need a Konnect control plane and data planes.",tag:recPrinc?"rec":null,tagText:"Recommended"},
    {v:"consumers",label:isAI(s)?"AI Consumers":"Kong Consumers",s:"One entity per caller in the control plane, with credentials or a mapped claim.",tag:"legacy",tagText:"Classic"}];
  }},
- {id:"access",title:"Access control",ask:"How do you decide what each caller may use?",help:s=>`Subscriptions are owned by the <b>${isAI(s)?"AI team (models, providers, agents)":"security team"}</b>. The options show whether they need subscription groups (sub-CGs).`,options:s=>{
+ {id:"access",title:"Access control",ask:"How do you decide what each caller may use?",help:s=>s.caller==="portal"?"Subscriptions are portal registrations, approved by the <b>API owner</b> or a portal admin and enforced by the ACE plugin.":`Subscriptions are owned by the <b>${isAI(s)?"AI team (models, providers, agents)":"security team"}</b>. The options show whether they need subscription groups (sub-CGs).`,options:s=>{
    const ai=isAI(s), pr=s.record==="principals", cl=s.record==="claims";
+   if(s.caller==="portal") return [
+     {v:"portal",label:"Approved in the portal (ACE)",s:"Developers request an API or API package. The API owner approves, or the publication auto-approves. The registration is the subscription.",tag:"nocg",tagText:"No CG"}];
    const subSrc = pr?"principal metadata consumer_groups":cl?`the ${IDP[s.idp]?.groups||"groups"} claim`:"Consumer membership";
    return [
    {v:"none",label:"Any authenticated caller",s:"No per-resource subscription.",tag:"nocg",tagText:"No CG"},
@@ -244,6 +256,10 @@ const STEPS = [
  }},
  {id:"plans",title:"Usage plans",multi:true,ask:"Which usage plans apply? Pick several if they stack.",help:s=>isAI(s)?"LLM token budgets are owned by the <b>AI team</b>.":"Per-API plans are owned by the <b>API owner</b>, BU-wide plans by the <b>org admin</b>. They use different plugins, so both apply to one caller.",options:s=>{
    const ai=isAI(s), pr=s.record==="principals";
+   if(s.caller==="portal") return [
+     {v:"none",label:"No plan",s:"Only portal access control."},
+     {v:"pkg",label:"API package rate limits",s:"Set on the package and per operation in Catalog. ACE enforces them, cumulatively across the package.",tag:"nocg",tagText:"No CG"},
+     {v:"app-cond",label:"Per-application plan",s:s.record==="consumers"?"rate-limiting-advanced scoped to the mapped Consumer.":"rate-limiting-advanced with condition principal.id == the application ID.",tag:"nocg",tagText:"No CG"}];
    if(ai) return [
      {v:"none",label:"No plan",s:"Only access control."},
      {v:"llm",label:"LLM token budget per tier",s:"Global ai-rate-limiting-advanced, rules per tier-CG, one counter per caller credential.",tag:"cg",tagText:"tier-CG",
@@ -258,8 +274,8 @@ const STEPS = [
  {id:"analytics",title:"Analytics",multi:true,ask:"How will you track usage?",help:s=>"Per caller is always on. Grouping by business unit needs a dimension that analytics can read: a Consumer Group, a cost tag, or a log label.",options:s=>{
    const ai=isAI(s), k=s.deploy==="konnect";
    return [
-     {v:"konnect",label:"Konnect Analytics",s:"Explorer and dashboards: principal, OIDC credential, consumer group, model, status.",disabled:k?null:"Needs Konnect."},
-     {v:"bu",label:"Break down by business unit",s:s.record==="principals"?"BU kept in principal metadata, plus a BU group or label for reporting.":"BU from the groups claim, mapped to a BU group or label."},
+     {v:"konnect",label:"Konnect Analytics",s:s.caller==="portal"?"Explorer and dashboards: application, API package, portal, status.":"Explorer and dashboards: principal, OIDC credential, consumer group, model, status.",disabled:k?null:"Needs Konnect."},
+     {v:"bu",label:"Break down by business unit",disabled:s.caller==="portal"?"Portal usage groups by application, developer team or portal.":null,s:s.record==="principals"?"BU kept in principal metadata, plus a BU group or label for reporting.":"BU from the groups claim, mapped to a BU group or label."},
      {v:"cost",label:"AI Cost Management",s:"Cost per subject and tag (Beta, US region).",disabled:!ai?"AI Gateway only.":s.target!=="models"?"Applies to LLM traffic.":!k?"Needs Konnect.":null},
      {v:"agentan",label:"Agent analytics",s:"A2A methods, tasks, contexts and errors.",disabled:!(ai&&s.target==="a2a")?"A2A agents only.":null},
      {v:"prom",label:"Prometheus + Grafana",s:"Service, route and model metrics. Identity labels come from a log-to-metric pipeline."},
@@ -327,7 +343,25 @@ function renderQuestion(){
 const complete=()=>visibleSteps().every(answered);
 
 /* ---------- blueprint derivation ---------- */
+function derivePortal(s){
+  const who=WHO.portal, idp=IDP[s.idp], co=s.record==="consumers";
+  const tgt={kind:"API package",name:"orders-api",pkg:"orders-partners",sub:null};
+  const credClaim = s.cred==="cc" && idp ? idp.app : null;
+  const warns=["ACE match_policy \"required\" rejects every request that matches no published operation with a 404. Start with \"if_present\".",
+    "ACE runs after the other authentication plugins: any other auth plugin on the same routes needs config.anonymous.",
+    "Each API linked to ACE can have at most 1,000 operations.",
+    "The first request of an application waits on a Kong Identity principal lookup, then it is cached."];
+  const notes=["The portal registration replaces subscription groups: no sub-CG, no ACL plugin."];
+  if(s.cred==="cc") notes.push(`Each application becomes a client in ${idp.label} through DCR; credential_claim ${credClaim} identifies it.`);
+  if(co) notes.push("Mapping applications to Consumers keeps Consumer-scoped plugins, at the cost of one Consumer per application per control plane.");
+  const an=[], A=s.analytics||[];
+  if(A.includes("konnect")) an.push({tool:"Konnect Analytics",where:"Observability → Explorer · Dev Portal → Analytics",dims:"application, api_package, portal, status"});
+  if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:"prometheus plugin + http-log (custom_fields_by_lua: principal id) → Vector",dims:"service, route, status; application via the log pipeline"});
+  if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin → collector",dims:"kong.auth.principal.id / display_name on request counts"});
+  return {ai:false,portal:true,pr:false,cl:false,co,who,idp,tgt,credClaim,groups:[],meta:{},warns,notes,auth:{plugin:"ace",mode:"portal"},authStrategy:false,an,plans:s.plans||[]};
+}
 function derive(s){
+  if(s.caller==="portal") return derivePortal(s);
   const ai=isAI(s), pr=s.record==="principals", cl=s.record==="claims", co=s.record==="consumers";
   const who=WHO[s.caller]||WHO.apps, idp=IDP[s.idp];
   const tgt=ai?(s.target==="models"?{kind:"model",name:"gpt-large",sub:"ai-sub-gpt-large"}:s.target==="a2a"?{kind:"agent",name:"kongair",sub:"a2a-sub-kongair"}:{kind:"MCP server",name:"github-tools",sub:"mcp-sub-github"}):{kind:"API",name:"orders-api",sub:"sub-orders-api"};
@@ -357,7 +391,6 @@ function derive(s){
   if(s.idp==="entra" && cl) warns.push("Entra ID groups are object IDs. Use app roles (roles claim) and name the groups after the roles.");
   if(pr) warns.push("Principals are cached on the data plane (10 min by default): metadata changes are not instant.");
   if(pr && groups.length && s.access!=="meta") warns.push("Two teams write the same metadata key (consumer_groups). Run membership changes through one provisioning pipeline.");
-  if(ai && s.target==="a2a") warns.push("AI Gateway 2.2.0 doesn't rewrite agent card URLs on JSON-RPC card methods. Add the post-function workaround.");
   if(s.cred==="apikey" && s.caller==="employees") warns.push("Personal API keys don't follow joiners/leavers. Rotate them and set expires_at.");
   if(co) notes.push("Consumers are created per control plane. With several control planes, every Consumer and its credentials is duplicated.");
   if(plans.includes("tier-cg") && plans.includes("bu-cg")) notes.push("The API plan (rate-limiting-advanced) and the BU plan (rate-limiting) are different plugins, so both apply.");
@@ -396,7 +429,7 @@ function renderBlueprint(){
    <div class="kpis">
      <div class="kpi ${nCG?"warn":"good"}"><b>${nCG}</b><span>Consumer Groups to create</span></div>
      <div class="kpi ${S.record==="consumers"?"warn":"good"}"><b>${S.record==="consumers"?"Yes":S.record?"0":"–"}</b><span>${d.ai?"AI Consumers":"Consumers"}</span></div>
-     <div class="kpi"><b>${d.pr?"Yes":S.record?"No":"–"}</b><span>KI principals</span></div>
+     <div class="kpi"><b>${d.pr?"Yes":d.portal&&S.record==="portalapp"?"Auto":S.record?"No":"–"}</b><span>KI principals</span></div>
      <div class="kpi"><b>${d.ai?(S.cred?"Yes":"–"):"n/a"}</b><span>Auth strategy</span></div>
    </div>
    ${nCG?`<div><h3>Groups</h3><ul class="plain">${d.groups.map(g=>`<li><span><code>${g.name}</code> · ${g.owner}</span></li>`).join("")}</ul></div>`:""}
@@ -406,7 +439,34 @@ function renderBlueprint(){
 
 /* ---------- sequence generation ---------- */
 const L=(id,label,sub,kind)=>({id,label,sub,kind});
+function buildSeqPortal(s,d){
+  const lanes=[L("c","Portal app",d.who.name,"actor"),L("dp","Dev Portal","registration","store")];
+  if(s.cred==="cc") lanes.push(L("idp",d.idp.label,"DCR provider","idp"));
+  lanes.push(L("ace","ace","Dev Portal access","plugin"));
+  if(d.plans.includes("app-cond")) lanes.push(L("rla","rate-limiting-adv",d.co?"Consumer-scoped":"principal.id","plugin"));
+  lanes.push(L("up",d.tgt.name,"upstream","upstream"));
+  const st=[];
+  st.push({f:"c",t:"dp",l:`register app · request ${d.tgt.pkg}`,h:"A developer registers the application",p:"The portal creates a Kong Identity principal for it, with the same ID as the application."});
+  st.push({f:"dp",t:"dp",l:"API owner approves the registration",h:"Approval",p:"Or auto_approve_registrations on the publication. The registration is the subscription: no sub-CG.",set:{decision:`registration: ${d.who.name} → ${d.tgt.pkg} approved`}});
+  if(s.cred==="cc"){
+    st.push({f:"dp",t:"idp",l:"DCR: create client",h:"Dynamic client registration",p:`The portal creates the OAuth client in ${d.idp.label}.`});
+    st.push({f:"idp",t:"dp",l:"client_id + secret",h:"Client created",p:"The developer reads the credentials in the portal."});
+    st.push({f:"c",t:"idp",l:"client_credentials",h:"Token request",p:"Standard OAuth flow against the IdP."});
+    st.push({f:"idp",t:"c",l:"access token (JWT)",h:"Short-lived token",p:"",set:{claims:`iss: ${d.idp.issuer}\n${d.credClaim}: <client_id>`}});
+  } else st.push({f:"dp",t:"c",l:"API key (generated in the portal)",h:"Key issued",p:"The key-auth application auth strategy issues the key."});
+  st.push({f:"c",t:"ace",l:`GET /orders · ${s.cred==="cc"?"Bearer":"apikey"}`,h:"Call through the gateway",p:"ACE is linked to the whole control plane and authenticates with the API's application auth strategy."});
+  st.push({f:"ace",t:"ace",l:"authenticate (application auth strategy)",h:"Application identified",p:"ACE resolves the application and its principal (cached).",set:{principal:`application ${d.who.name} (portal principal)`,consumer:d.co?`${d.who.name} (mapped Consumer)`:undefined}});
+  st.push({f:"ace",t:"ace",l:`operation → ${d.tgt.pkg} · registration ✓`,h:"Access check",p:"A request outside the registered packages gets a 403. With match_policy if_present, routes without a published operation pass through untouched.",set:{decision:`ace: ${d.tgt.pkg} registered`}});
+  let prev="ace";
+  if(d.plans.includes("pkg")) st.push({f:"ace",t:"ace",l:"package rate limit",h:"API package plan",p:"Package limits apply across all its operations; operations can have tighter limits.",set:{decision:`ace: ${d.tgt.pkg} registered\npackage limit: within`}});
+  if(d.plans.includes("app-cond")){ st.push({f:"ace",t:"rla",l:d.co?"Consumer-scoped limit":`condition principal.id == "<app id>"`,h:"Per-application plan",p:"Over the limit returns 429."}); prev="rla"; }
+  st.push({f:prev,t:"up",l:"proxied",h:"Proxied",p:""});
+  st.push({f:"up",t:"c",l:"200 OK",h:"Response",p:"Usage is attributed to the application.",set:d.an.length?{analytics:d.an.map(a=>`${a.tool}: ${a.dims}`).join("\n")}:undefined});
+  st.forEach(x=>{if(x.set) for(const k in x.set) if(x.set[k]===undefined) delete x.set[k]});
+  return {lanes,steps:st,band:`KONG GATEWAY 3.16 · CONTROL PLANE LINKED TO DEV PORTAL`};
+}
 function buildSeq(s,d){
+  if(d.portal) return buildSeqPortal(s,d);
   const lanes=[], steps=[];
   const who=d.who, ai=d.ai;
   lanes.push(L("c",who.label,who.name,"actor"));
@@ -473,7 +533,34 @@ function buildSeq(s,d){
 
 /* ---------- config generation ---------- */
 function yamlList(a){return "["+a.join(", ")+"]"}
+function genDeclarativePortal(s,d){
+  const rl = d.plans.includes("app-cond");
+  return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml --konnect-control-plane-name acme-apis
+_format_version: "3.0"
+${d.co?`consumers:
+  - username: ${d.who.name}             # application mapped to this Consumer in the portal
+${rl?`    plugins:
+      - name: rate-limiting-advanced
+        config: { identifier: consumer, limit: [1000], window_size: [3600], window_type: fixed }
+`:""}`:""}services:
+  - name: ${d.tgt.name}
+    url: http://orders.internal:8080
+    routes: [{ name: orders, paths: [/orders] }]   # operations map to routes through the OpenAPI spec
+plugins:
+  - name: ace                           # Dev Portal access control for every API linked to this control plane
+    config: { match_policy: if_present }
+${rl&&!d.co?`  - name: rate-limiting-advanced        # per-application plan (principal ID = application ID)
+    condition: 'principal.id == "<application id>"'
+    config: { identifier: principal, limit: [1000], window_size: [3600], window_type: fixed }
+`:""}${(s.analytics||[]).includes("prom")?`  - name: prometheus
+    config: { status_code_metrics: true, latency_metrics: true }
+`:""}${(s.analytics||[]).includes("otel")?`  - name: opentelemetry
+    config:
+      metrics: { endpoint: http://otel-collector:4318/v1/metrics, enable_request_metrics: true, enable_principal_attribute: true }
+`:""}`};
+}
 function genDeclarative(s,d){
+  if(d.portal) return genDeclarativePortal(s,d);
   const iss = d.idp?d.idp.issuer:"";
   if(d.ai){
     const strat = d.auth.plugin==="openid-connect"
@@ -588,7 +675,40 @@ ${authPlug}${acl}
 ${glob.length?`plugins:\n${glob.join("\n")}\n`:""}`};
 }
 
+function genApiPortal(s,d){
+  const o=[`export KONNECT_API=https://us.api.konghq.com   # your region\nexport H="Authorization: Bearer $KONNECT_TOKEN"`];
+  if(s.cred==="cc"){
+    if(s.idp==="ki") o.push(`# Kong Identity as DCR provider: pick it under Dev Portal → Application Auth → DCR providers
+# (Terraform: konnect_dcr_provider with a kong_identity block)`);
+    else o.push(`# DCR provider (${d.idp.label})
+DCR=$(curl -s -X POST $KONNECT_API/v2/dcr-providers -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"${s.idp}-dcr","provider_type":"${s.idp==="okta"?"okta":"azureAd"}","issuer":"${d.idp.issuer}","dcr_config":{ "...": "IdP-specific, see the DCR how-to" }}' | jq -r .id)`);
+    o.push(`# Application auth strategy: OpenID Connect + DCR
+AUTH=$(curl -s -X POST $KONNECT_API/v2/application-auth-strategies -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"partners-oidc","display_name":"Partners (OAuth)","strategy_type":"openid_connect",
+       "configs":{"openid-connect":{"issuer":"${d.idp.issuer}","credential_claim":["${d.credClaim}"],
+                                    "scopes":["openid"],"auth_methods":["client_credentials","bearer"]}},
+       "dcr_provider_id":"'$DCR'"}' | jq -r .id)`);
+  } else o.push(`# Application auth strategy: portal-issued API keys
+AUTH=$(curl -s -X POST $KONNECT_API/v2/application-auth-strategies -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"partners-keys","display_name":"API key","strategy_type":"key_auth","configs":{"key-auth":{"key_names":["apikey"]}}}' | jq -r .id)`);
+  o.push(`# API, linked to the control plane that runs ACE
+API=$(curl -s -X POST $KONNECT_API/v3/apis -H "$H" -H 'content-type: application/json' -d '{"name":"Orders API","version":"v1"}' | jq -r .id)
+curl -s -X POST $KONNECT_API/v3/apis/$API/implementations -H "$H" -H 'content-type: application/json' \\
+  -d '{"control_plane_reference":{"control_plane":{"id":"'$CP'"}}}'
+
+# Publish to the portal with the auth strategy; registrations need approval
+curl -s -X PUT $KONNECT_API/v3/apis/$API/publications/$PORTAL -H "$H" -H 'content-type: application/json' \\
+  -d '{"auth_strategy_ids":["'$AUTH'"],"visibility":"public","auto_approve_registrations":false}'
+
+# API package "${d.tgt.pkg}" with its operations${d.plans.includes("pkg")?" and rate limits":""}: Catalog → API packages
+# (operations are mapped from the OpenAPI spec)`);
+  if(d.plans.includes("app-cond")&&!d.co) o.push(`# Per-application plan: the principal ID is the application ID
+curl -s "$KONNECT_API/v3/portals/$PORTAL/applications?filter%5Bname%5D%5Beq%5D=${d.who.name}" -H "$H" | jq -r '.data[0].id'`);
+  return {lang:"bash",title:"Konnect API",text:o.join("\n\n")};
+}
 function genApi(s,d){
+  if(d.portal) return genApiPortal(s,d);
   const out=[];
   out.push(`export KONNECT_API=https://us.api.konghq.com   # your region\nexport H="Authorization: Bearer $KONNECT_TOKEN"`);
   if(s.idp==="ki"){
@@ -638,7 +758,70 @@ curl -s -X POST $KONNECT_API/v1/agents/$A/principals -H "$H" -H 'content-type: a
   return {lang:"bash",title:"Konnect API",text:out.join("\n\n")};
 }
 
+function genTfPortal(s,d){
+  const t=[`terraform {\n  required_providers {\n    konnect = { source = "kong/konnect" }\n  }\n}`];
+  if(s.cred==="cc"){
+    t.push(s.idp==="ki"?`resource "konnect_dcr_provider" "partners" {
+  kong_identity = {
+    name   = "kong-identity-dcr"
+    issuer = "${d.idp.issuer}"
+  }
+}`:`resource "konnect_dcr_provider" "partners" {
+  # ${d.idp.label}: use the ${s.idp==="okta"?"okta":"azure_ad"} block, see the provider docs for dcr_config
+}`);
+    t.push(`resource "konnect_application_auth_strategy" "partners" {
+  openid_connect = {
+    name            = "partners-oidc"
+    display_name    = "Partners (OAuth)"
+    strategy_type   = "openid_connect"
+    dcr_provider_id = konnect_dcr_provider.partners.id
+    configs = {
+      openid_connect = {
+        issuer           = "${d.idp.issuer}"
+        credential_claim = ["${d.credClaim}"]
+        scopes           = ["openid"]
+        auth_methods     = ["client_credentials", "bearer"]
+      }
+    }
+  }
+}`);
+  } else t.push(`resource "konnect_application_auth_strategy" "partners" {
+  key_auth = {
+    name          = "partners-keys"
+    display_name  = "API key"
+    strategy_type = "key_auth"
+    configs       = { key_auth = { key_names = ["apikey"] } }
+  }
+}`);
+  t.push(`resource "konnect_api" "orders" {
+  name    = "Orders API"
+  version = "v1"
+}
+resource "konnect_api_implementation" "orders" {
+  api_id                  = konnect_api.orders.id
+  control_plane_reference = { control_plane = { id = "<control plane id>" } }
+}
+resource "konnect_api_publication" "orders" {
+  api_id                     = konnect_api.orders.id
+  portal_id                  = "<portal id>"
+  auth_strategy_ids          = [konnect_application_auth_strategy.partners.id]
+  visibility                 = "public"
+  auto_approve_registrations = false
+}
+resource "konnect_gateway_plugin_ace" "portal_access" {
+  control_plane_id = "<control plane id>"
+  config           = { match_policy = "if_present" }
+}
+# API packages have no Terraform resource yet: create "${d.tgt.pkg}" in Catalog.`);
+  if(d.plans.includes("app-cond")&&!d.co) t.push(`resource "konnect_gateway_plugin_rate_limiting_advanced" "per_app" {
+  control_plane_id = "<control plane id>"
+  condition        = "principal.id == \\"<application id>\\""
+  config           = { identifier = "principal", limit = [1000], window_size = [3600], window_type = "fixed" }
+}`);
+  return {lang:"hcl",title:"Terraform",text:t.join("\n\n")};
+}
 function genTf(s,d){
+  if(d.portal) return genTfPortal(s,d);
   const t=[];
   t.push(`terraform {\n  required_providers {\n    konnect      = { source = "kong/konnect" }\n${d.pr?'    konnect-beta = { source = "kong/konnect-beta" }   # identity_directory\n':""}  }\n}`);
   if(s.idp==="ki") t.push(`resource "konnect_identity_auth_server" "acme" {
@@ -814,10 +997,10 @@ function renderResult(){
   const CFG={decl:genDeclarative(S,d),api:genApi(S,d),tf:genTf(S,d)};
   const summary=[
     ["Product",`${S.product==="ai"?"AI Gateway 2.2":"Kong Gateway 3.16"} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
-    ["Caller",`${WHO[S.caller].label}s${d.ai?" → "+d.tgt.kind+"s":""}`],
-    ["Credential",S.cred==="apikey"?"API keys":`${S.cred==="oidc"?"OIDC login":"OAuth client credentials"} · ${d.idp.label}`],
-    ["Identity record",S.record==="claims"?`Token claims (virtual credential ${d.credClaim})`:S.record==="principals"?"Kong Identity principals":"Consumers"],
-    ["Auth",d.ai?`AuthStrategy ${d.auth.plugin}${d.pr?" + principals":""}`:`${d.auth.plugin}${d.pr?" (principals)":""}`],
+    ["Caller",`${WHO[S.caller].label}s${d.ai?" → "+d.tgt.kind+"s":d.portal?" → API package "+d.tgt.pkg:""}`],
+    ["Credential",S.cred==="apikey"?(d.portal?"Portal-issued API keys":"API keys"):`${S.cred==="oidc"?"OIDC login":d.portal?"OAuth client credentials via DCR":"OAuth client credentials"} · ${d.idp.label}`],
+    ["Identity record",S.record==="claims"?`Token claims (virtual credential ${d.credClaim})`:S.record==="principals"?"Kong Identity principals":S.record==="portalapp"?"Portal application (auto-created principal)":"Consumers"],
+    ["Auth",d.portal?`ace + application auth strategy (${S.cred==="cc"?"OIDC with DCR":"key-auth"})`:d.ai?`AuthStrategy ${d.auth.plugin}${d.pr?" + principals":""}`:`${d.auth.plugin}${d.pr?" (principals)":""}`],
     ["Access",STEPS.find(s=>s.id==="access").options(S).find(o=>o.v===S.access)?.label||"–"],
     ["Plans",S.plans.map(v=>label(STEPS.find(s=>s.id==="plans"),v)).join(", ")]];
   r.innerHTML=`

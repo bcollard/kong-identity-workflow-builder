@@ -3,7 +3,7 @@
 A static, single-page wizard that turns a few answers into a Kong identity blueprint:
 
 1. Product (API Gateway 3.16 or AI Gateway 2.2) and control plane (Konnect or self-managed)
-2. Who calls (employees, apps, agents) and, on AI Gateway, what they call (models, A2A agents, MCP servers)
+2. Who calls (employees, apps, agents, Dev Portal applications) and, on AI Gateway, what they call (models, A2A agents, MCP servers)
 3. Credential (OIDC login, OAuth client credentials, API keys) and OAuth server (Kong Identity, Okta, Entra ID, Keycloak, AD FS)
 4. Identity record (token claims, Kong Identity principals, Consumers)
 5. Access control, usage plans and analytics
@@ -21,6 +21,7 @@ No build step and no server code: `site/index.html` is plain HTML, CSS and JavaS
 ```bash
 make serve   # http://localhost:8080
 make test    # walk every answer path (≈32k) through the generators with Node
+node test/sample.js '{"product":"api","deploy":"konnect","caller":"portal","cred":"cc","idp":"okta","record":"portalapp","access":"portal","plans":["pkg"],"analytics":["konnect"]}'   # print one blueprint
 ```
 
 ## Deploy
