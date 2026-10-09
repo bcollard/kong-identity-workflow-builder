@@ -2,7 +2,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { JSDOM } = require("jsdom");
-const { loadLogic, allPaths, runtimeClasses, render, label, pageHtml } = require("./lib/app");
+const { KONNECT, loadLogic, allPaths, runtimeClasses, render, label, pageHtml } = require("./lib/app");
 
 const X = loadLogic();
 const CLASSES = runtimeClasses(allPaths(X));
@@ -71,7 +71,7 @@ test(`rendered result matches the computed blueprint (${SAMPLE.length} sampled c
   assert.deepEqual(errs.slice(0, 12), []);
 });
 
-test("click through the wizard to the API-1 lab path", () => {
+test("click through the wizard to the API-1 lab path", { skip: !KONNECT && "Konnect control plane out of scope" }, () => {
   const w = openPage(null), doc = w.document;
   doc.getElementById("b-reset").click();
   const choose = lab => {
@@ -94,6 +94,31 @@ test("click through the wizard to the API-1 lab path", () => {
   [...doc.querySelectorAll("#stepper button")].find(b => text(b).includes("Gateway version")).click();
   choose("Kong Gateway 3.15");
   assert.doesNotMatch(doc.getElementById("code")?.textContent || "", /identifier: principal/);
+  w.close();
+});
+
+test("click through a self-managed API key path", () => {
+  const w = openPage(null), doc = w.document;
+  doc.getElementById("b-reset").click();
+  const choose = lab => {
+    const btn = [...doc.querySelectorAll("#question .opt")].find(b => text(b.querySelector(".l")).startsWith(lab));
+    assert.ok(btn, `option "${lab}" on step "${text(doc.querySelector("#question h2"))}"`);
+    assert.notEqual(btn.getAttribute("aria-disabled"), "true", `option "${lab}" is enabled`);
+    btn.click();
+  };
+  const next = () => doc.getElementById("b-next").click();
+  choose("API Gateway"); choose("Self-managed"); choose("Kong Gateway 3.16"); choose("Apps"); choose("API keys");
+  choose("Kong Consumers"); choose("Subscription groups + ACL");
+  choose("Per-API plan · tier-CG"); next();
+  choose("Prometheus + Grafana"); next();
+  const res = doc.getElementById("result");
+  assert.equal(res.hidden, false, "result shown");
+  assert.match(text(res.querySelector(".badge")), /draft/i);
+  assert.match(text(res), /sub-orders-api/);
+  assert.match(text(res), /tier-bronze/);
+  const tabs = [...res.querySelectorAll("[data-t]")].map(b => b.dataset.t);
+  assert.ok(!tabs.includes("tf"), "no Terraform tab on self-managed");
+  assert.doesNotMatch(doc.getElementById("code").textContent, /principals|konnect-control-plane-name/);
   w.close();
 });
 

@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const yaml = require("js-yaml");
 const Ajv2020 = require("ajv/dist/2020");
-const { loadLogic, allPaths, runtimeClasses, render, label } = require("./lib/app");
+const { KONNECT, loadLogic, allPaths, runtimeClasses, render, label } = require("./lib/app");
 const { checkPlugin, checkConfig } = require("./lib/kong-schema");
 
 const X = loadLogic();
@@ -64,8 +64,19 @@ test("decK plugins match the Kong plugin schemas of the selected version", () =>
   report("decK plugin schema");
 });
 
-test("kongctl AI Gateway files match the kongctl schema and AI Gateway 2.2 plugin schemas", () => {
+test("AI Gateway 2.x auth strategies and policies match the AI Gateway 2.2 plugin schemas", () => {
   for (const s of CLASSES.filter(c => c.product === "ai")) {
+    const doc = yaml.load(render(X, s).cfg.decl.text);
+    for (const gw of doc.ai_gateways) {
+      for (const a of gw.auth_strategies || []) for (const e of checkConfig(a.type, a.config, "aigw-2.2", `auth_strategies(${a.name})`)) fail(s, e);
+      for (const p of gw.policies || []) for (const e of checkConfig(p.type, p.config, "aigw-2.2", `policies(${p.name})`)) fail(s, e);
+    }
+  }
+  report("AI Gateway 2.2 plugin schema");
+});
+
+test("kongctl AI Gateway files match the kongctl schema", { skip: !KONNECT && "Konnect control plane out of scope" }, () => {
+  for (const s of CLASSES.filter(c => c.product === "ai" && c.deploy === "konnect")) {
     const doc = yaml.load(render(X, s).cfg.decl.text);
     for (const gw of doc.ai_gateways) {
       // Known gap in `kongctl explain` 1.20.1: principals.match_consumer_groups is missing from the schema although the
@@ -81,14 +92,12 @@ test("kongctl AI Gateway files match the kongctl schema and AI Gateway 2.2 plugi
       delete forAjv.models;
       if (!validateGateway(forAjv)) for (const e of validateGateway.errors.slice(0, 3))
         fail(s, `kongctl ${e.instancePath || "/"} ${e.message}${e.params?.additionalProperty ? " (" + e.params.additionalProperty + ")" : ""}${e.params?.allowedValues ? " " + JSON.stringify(e.params.allowedValues) : ""}`);
-      for (const a of gw.auth_strategies || []) for (const e of checkConfig(a.type, a.config, "aigw-2.2", `auth_strategies(${a.name})`)) fail(s, e);
-      for (const p of gw.policies || []) for (const e of checkConfig(p.type, p.config, "aigw-2.2", `policies(${p.name})`)) fail(s, e);
     }
   }
   report("kongctl schema");
 });
 
-test("Konnect API calls carry valid JSON bodies", () => {
+test("API calls carry valid JSON bodies", () => {
   for (const s of CLASSES) {
     const text = render(X, s).cfg.api.text;
     for (const m of text.matchAll(/-d '((?:[^']|'\$[A-Z_]+')*)'/g)) {
@@ -99,7 +108,7 @@ test("Konnect API calls carry valid JSON bodies", () => {
   report("API JSON");
 });
 
-test("Terraform uses existing konnect resources and balanced braces", () => {
+test("Terraform uses existing konnect resources and balanced braces", { skip: !KONNECT && "Konnect control plane out of scope" }, () => {
   for (const s of CLASSES.filter(c => c.deploy === "konnect")) {
     const text = render(X, s).cfg.tf.text;
     for (const m of text.matchAll(/resource "([a-z0-9_]+)"/g)) if (!TF_RESOURCES.has(m[1])) fail(s, `unknown Terraform resource ${m[1]}`);

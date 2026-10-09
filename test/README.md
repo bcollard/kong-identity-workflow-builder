@@ -2,6 +2,16 @@
 
 `npm ci && npm test` (Node 22+). Everything runs offline; no Kong, Konnect or browser needed.
 
+## Scope
+
+| Command | Control planes | Paths / runtime classes |
+|---|---|---|
+| `npm test` (default) | self-managed only | ~12k / ~1.5k |
+| `npm run test:all` or `IWB_DEPLOY=self,konnect npm test` | self-managed + Konnect | ~64k / ~4.4k |
+
+`IWB_DEPLOY` filters the deploy step in every path walk. Konnect-only tests (Dev Portal, principals, kongctl schema,
+Terraform, lab badges, Konnect pruning) are reported as skipped when Konnect is out of scope.
+
 | File | What it proves |
 |---|---|
 | `wizard.test.js` | Step visibility, disabled options and their reasons, pruning after an upstream change, no dead ends |

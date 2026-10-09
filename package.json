@@ -4,6 +4,7 @@
   "description": "Static wizard; Node is only used for tests.",
   "scripts": {
     "test": "node --test --test-reporter=spec test/*.test.js",
+    "test:all": "IWB_DEPLOY=self,konnect node --test --test-reporter=spec test/*.test.js",
     "classes": "node test/classes.js"
   },
   "devDependencies": {

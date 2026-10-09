@@ -2,7 +2,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const yaml = require("js-yaml");
-const { loadLogic, allPaths, runtimeClasses, render, label } = require("./lib/app");
+const { DEPLOYS, KONNECT, loadLogic, allPaths, runtimeClasses, render, label } = require("./lib/app");
 
 const X = loadLogic();
 const PATHS = allPaths(X);
@@ -45,7 +45,10 @@ function view(s) {
 }
 for (const s of CLASSES) parsed.set(label(s), view(s));
 
-test(`paths enumerated (${PATHS.length} paths, ${CLASSES.length} runtime classes)`, () => { assert.ok(PATHS.length > 60000); });
+test(`paths enumerated on ${DEPLOYS.join(" + ")} (${PATHS.length} paths, ${CLASSES.length} runtime classes)`, () => {
+  assert.ok(PATHS.length > (KONNECT ? 60000 : 1000));
+  assert.ok(PATHS.every(p => DEPLOYS.includes(p.deploy)), "only in-scope control planes");
+});
 
 test("groups table = consumer groups declared in the config (names unique)", () => {
   for (const s of CLASSES) {
@@ -143,7 +146,15 @@ test("output tabs: Terraform only for Konnect, Konnect API only when there is so
   report("tabs");
 });
 
-test("lab badge only on the exact combinations that ran in the lab", () => {
+test("no lab badge on self-managed paths (the lab ran on Konnect)", () => {
+  for (const s of PATHS.filter(p => p.deploy === "self")) {
+    const lab = X.labMatch(Object.assign(X.S, JSON.parse(JSON.stringify(s))));
+    if (lab) fail(s, `badge ${lab}`);
+  }
+  report("self-managed badges");
+});
+
+test("lab badge only on the exact combinations that ran in the lab", { skip: !KONNECT && "Konnect control plane out of scope" }, () => {
   const seen = {};
   for (const s of PATHS) {
     const lab = X.labMatch(Object.assign(X.S, JSON.parse(JSON.stringify(s))));

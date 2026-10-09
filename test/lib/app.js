@@ -20,16 +20,22 @@ function loadLogic() {
   return ctx.API;
 }
 
+// Control planes in scope. Default: self-managed only. IWB_DEPLOY=self,konnect runs the Konnect paths too.
+const DEPLOYS = (process.env.IWB_DEPLOY || "self").split(",").map(x => x.trim()).filter(Boolean);
+const KONNECT = DEPLOYS.includes("konnect");
+/** Wizard options to explore: enabled, and on an in-scope control plane. */
+const explorable = (st, s) => st.options(s).filter(o => !o.disabled && (st.id !== "deploy" || DEPLOYS.includes(o.v)));
+
 const subsets = a => a.reduce((acc, x) => acc.concat(acc.map(s => [...s, x])), [[]]).filter(s => s.length);
 
-/** Every complete answer set the wizard allows (respects visibility and disabled options). */
+/** Every complete answer set the wizard allows on the in-scope control planes (respects visibility and disabled options). */
 function allPaths(X) {
   const out = [], S = X.S;
   const blank = JSON.stringify(S);
   (function walk(i) {
     const vs = X.visibleSteps();
     if (i >= vs.length) { out.push(JSON.parse(JSON.stringify(S))); return; }
-    const st = vs[i], opts = st.options(S).filter(o => !o.disabled).map(o => o.v);
+    const st = vs[i], opts = explorable(st, S).map(o => o.v);
     const choices = st.multi ? [...(opts.includes("none") ? [["none"]] : []), ...subsets(opts.filter(v => v !== "none"))] : opts;
     const saved = JSON.stringify(S);
     for (const c of choices) { Object.assign(S, JSON.parse(saved)); S[st.id] = c; walk(i + 1); }
@@ -61,4 +67,4 @@ function render(X, state) {
 
 const label = s => CORE.map(f => s[f] ?? "-").join("/") + "/" + s.plans.join("+") + "/" + s.analytics.join("+");
 
-module.exports = { loadLogic, allPaths, runtimeClasses, render, label, pageHtml, PAGE };
+module.exports = { DEPLOYS, KONNECT, explorable, loadLogic, allPaths, runtimeClasses, render, label, pageHtml, PAGE };
