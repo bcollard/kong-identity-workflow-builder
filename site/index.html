@@ -415,7 +415,10 @@ function derive(s){
   const authStrategy = ai;
   // warnings
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model or agent: callers from another issuer need their own route.");
-  if(ai) warns.push("AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first.");
+  if(ai) warns.push(s.access==="subcg"
+    ? "AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first."
+    : "AI Gateway answers 401 for a missing or unknown token: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
+  if(cl&&groups.length&&s.access!=="subcg") notes.push("Token groups are optional (consumer_groups_optional: true): callers with no known group still get through; plans and BU attribution apply to group members only.");
   if(!ai && auth.plugin==="openid-connect") warns.push("Gateway 3.16 rejects the config if openid-connect has ssl_verify: false. Keep it true and set cache_tokens_salt for decK.");
   if(ai1 && oidcLike(s)) notes.push("Plain openid-connect accepts several issuers on one route (issuers_allowed + extra_jwks_uris), unlike AI Gateway 2.x auth strategies.");
   if(ai1 && plans.includes("llm")) warns.push("ai-rate-limiting-advanced policy mode has no credential matcher on 3.15/3.16: per-caller budgets without Consumers use the deprecated llm_providers mode with identifier: credential.");
@@ -612,7 +615,7 @@ function genDeclarativeAI1(s,d){
           issuer: ${iss}/.well-known/openid-configuration
           auth_methods: [bearer]
           audience_required: [kong-gateway]
-${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&g.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: false\n`:""}${s.access==="claimacl"&&s.target!=="mcp"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
+${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&g.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${s.access==="claimacl"&&s.target!=="mcp"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
           ssl_verify: true`:`      - name: key-auth
         config:
           key_names: [apikey]
@@ -679,7 +682,7 @@ function genDeclarative(s,d){
       issuer: ${iss}/.well-known/openid-configuration
       auth_methods: [bearer]
       audience_required: [kong-gateway]
-${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim: [${d.idp.groups}]\n      consumer_groups_optional: false\n`:""}${d.co?`      consumer_claims: [[${d.credClaim||"sub"}]]\n      consumer_by: [custom_id]\n`:""}${d.pr?`      principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}      cache_tokens_salt: change-me
+${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim: [${d.idp.groups}]\n      consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${d.co?`      consumer_claims: [[${d.credClaim||"sub"}]]\n      consumer_by: [custom_id]\n`:""}${d.pr?`      principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}      cache_tokens_salt: change-me
       ssl_verify: true`
       : `  - ref: ${s.caller}-keys
     name: ${s.caller}-keys
@@ -766,7 +769,7 @@ ${d.auth.plugin==="key-auth"?`    credentials: [{ name: ${d.who.name}-key, type:
       const prov = s.target==="models"?`model_providers:
   - name: openai
     type: openai
-    config: { auth: { type: basic, headers: [{ name: Authorization, value: "Bearer {vault://env/OPENAI_API_KEY}" }] } }
+    config: { auth: { type: basic, headers: [{ name: Authorization, value: "{vault://env/openai-auth-header}" }] } }   # OPENAI_AUTH_HEADER="Bearer sk-..." on the data plane
 `:"";
       return {lang:"yaml",title:"deck ai sync aigw.yaml",text:`# deck ai sync aigw.yaml   (self-managed; preview the lowered config with: deck file ai2kong -s aigw.yaml)
 auth_strategies:
@@ -778,7 +781,13 @@ ai_gateways:
   - ref: aigw
     name: acme-aigw
     display_name: ACME AI Gateway
-    auth_strategies:
+${s.target==="models"?`    model_providers:
+      - ref: openai
+        name: openai
+        display_name: OpenAI
+        type: openai
+        config: { auth: { type: basic, headers: [{ name: Authorization, value: "{vault://env/openai-auth-header}" }] } }   # OPENAI_AUTH_HEADER="Bearer sk-..." on the data planes
+`:""}    auth_strategies:
 ${strat.replace(/^/gm,"  ")}
 ${cgs?`    consumer_groups:\n${cgs.replace(/^/gm,"  ")}\n`:""}${cons}${pol.length?`    policies:\n${pol.join("\n").replace(/^/gm,"  ")}\n`:""}${ent}`};
   }
@@ -795,7 +804,7 @@ ${cgs?`    consumer_groups:\n${cgs.replace(/^/gm,"  ")}\n`:""}${cons}${pol.lengt
           issuer: ${iss}/.well-known/openid-configuration
           auth_methods: [bearer]
           audience_required: [kong-gateway]
-${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: false\n`:""}${s.access==="claimacl"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
+${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${s.access==="claimacl"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
           ssl_verify: true`:`      - name: key-auth
         config:
           key_names: [apikey]

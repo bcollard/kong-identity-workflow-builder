@@ -66,7 +66,8 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   Auth plugins are rejected as policies.
 - Konnect allows **one `openid-connect` auth strategy per model** (`only 1 auth strategy of type "openid-connect" is allowed`,
   `lab-verified`). Different issuers need different model routes.
-- Missing or unknown tokens return **403**: the converter adds an `anonymous` fallback that the ACL rejects first (`lab-verified`).
+- Missing or unknown tokens: the converter adds an `anonymous` fallback consumer. With a model ACL the ACL rejects it first
+  (**403**, `lab-verified`); without one a `request-termination` answers **401** (`lab-verified`).
 - Model and agent `access.acls` accept group names only; the `acl` policy is global-only. Per-model subscriptions need sub-CGs.
 - `ai-rate-limiting-advanced`: no `principal` identifier; rules use `match` on `consumer_group` (`key: name`) plus
   `{type: credential, partition_by: true}` for per-caller budgets. Not allowed on agents or MCP servers.

@@ -173,3 +173,25 @@ test("lab badge only on the exact combinations that ran in the lab", { skip: !KO
   for (const id of ["AI-1", "AI-2", "AI-3", "API-1", "API-2"]) if (!seen[id]) failures.push(`badge ${id} is unreachable`);
   report("lab badges");
 });
+
+test("AI Gateway 2.x: every model target's provider is declared in the same file (Konnect rejects unknown providers)", () => {
+  for (const s of CLASSES.filter(c => c.product === "ai" && c.target === "models")) {
+    const { gw } = parsed.get(label(s));
+    const declared = new Set((gw.model_providers || []).map(p => p.name));
+    for (const m of gw.models || []) for (const t of m.targets || []) if (!declared.has(t.provider)) fail(s, `model ${m.name} uses undeclared provider ${t.provider}`);
+    for (const p of gw.model_providers || []) for (const h of p.config?.auth?.headers || [])
+      if (/\{vault:\/\//.test(h.value) && !/^\{vault:\/\/[^}]+\}$/.test(h.value)) fail(s, `provider ${p.name}: a vault reference must be the whole value, got "${h.value}"`);
+  }
+  report("model providers");
+});
+
+test("token groups only block callers when access is decided by subscription groups", () => {
+  for (const s of CLASSES) {
+    const { cfg } = parsed.get(label(s));
+    for (const m of cfg.decl.text.matchAll(/consumer_groups_optional: (\S+)/g)) {
+      const want = String(s.access !== "subcg");
+      if (m[1] !== want) fail(s, `consumer_groups_optional: ${m[1]} with access ${s.access} (want ${want})`);
+    }
+  }
+  report("consumer_groups_optional");
+});
