@@ -10,6 +10,9 @@
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
+  // Consent Mode: no analytics cookies until the visitor accepts (choice kept in localStorage "iwb-consent")
+  gtag('consent', 'default', {analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
+  try { if (localStorage.getItem('iwb-consent') === 'granted') gtag('consent', 'update', {analytics_storage: 'granted'}); } catch (e) {}
   gtag('js', new Date());
 
   gtag('config', 'G-XM8T0PF7G7');
@@ -127,6 +130,9 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .kv dd.none{color:var(--muted)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}
 .grid2 .panel{padding:16px;display:flex;flex-direction:column;gap:10px}
+.grid2 .panel.full{grid-column:1/-1}
+.consent{position:fixed;left:16px;right:16px;bottom:16px;z-index:10;max-width:760px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:var(--panel,#0a1f12);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13px}
+.consent div{display:flex;gap:8px}
 .tablebox{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -185,7 +191,11 @@ footer{color:var(--muted);font-size:12px}
 
   <section class="res" id="result" hidden></section>
 
-  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a></footer>
+  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a>. Community project, not an official Kong product.</footer>
+  <div class="consent" id="consent" role="region" aria-label="Analytics consent" hidden>
+    <span>This site uses Google Analytics cookies to count visits and popular scenarios. Nothing is sent about your answers beyond the page address.</span>
+    <div><button class="btn" id="c-decline">Decline</button><button class="btn primary" id="c-accept">Accept</button></div>
+  </div>
 </div>
 
 <script>
@@ -1319,7 +1329,7 @@ function renderResult(){
      <div class="panel"><h3>Consumer Groups to create</h3>${d.groups.length?`<div class="tablebox"><table><thead><tr><th>Group</th><th>Kind</th><th>Owner</th><th>Carries</th><th>Members from</th></tr></thead><tbody>${d.groups.map(g=>`<tr><td><code>${g.name}</code></td><td><span class="kind ${g.kind}">${g.kind==="sub"?"sub-CG":g.kind==="tier"?"tier-CG":"BU-CG"}</span></td><td>${g.owner}</td><td>${esc(g.carries)}</td><td>${esc(g.memb)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">None. Access and plans are handled without Consumer Groups.</p>`}
        ${d.pr&&Object.keys(d.meta).length?`<h3>Principal metadata</h3><pre class="code">${esc(JSON.stringify(d.meta,null,2))}</pre>`:""}</div>
      <div class="panel"><h3>Analytics</h3>${d.an.length?`<div class="tablebox"><table><thead><tr><th>Tool</th><th>Where</th><th>Dimensions</th></tr></thead><tbody>${d.an.map(a=>`<tr><td>${a.tool}</td><td>${esc(a.where)}</td><td>${esc(a.dims)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">No analytics selected.</p>`}</div>
-     <div class="panel"><h3>Watch out</h3><ul class="plain warns">${[...d.warns,...d.notes].map(w=>`<li><span>${esc(w)}</span></li>`).join("")||"<li><span>Nothing specific.</span></li>"}</ul></div>
+     <div class="panel full"><h3>Watch out</h3><ul class="plain warns">${[...d.warns,...d.notes].map(w=>`<li><span>${esc(w)}</span></li>`).join("")||"<li><span>Nothing specific.</span></li>"}</ul></div>
    </div>
    <div class="panel"><div class="tabs" role="tablist">
        <button role="tab" data-t="decl">${d.ai?(S.deploy==="konnect"?"kongctl":"deck ai sync"):"decK"}</button>
@@ -1347,6 +1357,13 @@ function notice(msg,info){const n=document.getElementById("notice");n.hidden=!ms
 document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
 document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
+(function consent(){ // Google Consent Mode: denied by default (see <head>), updated on the visitor's choice
+  let choice=null; try{choice=localStorage.getItem("iwb-consent")}catch(e){}
+  const box=document.getElementById("consent"); box.hidden=!!choice;
+  const set=v=>{try{localStorage.setItem("iwb-consent",v)}catch(e){}; if(typeof gtag==="function") gtag("consent","update",{analytics_storage:v}); box.hidden=true};
+  document.getElementById("c-accept").onclick=()=>set("granted");
+  document.getElementById("c-decline").onclick=()=>set("denied");
+})();
 document.getElementById("appver").textContent=APP_VERSION==="dev"?"development build":"v"+APP_VERSION;
 const shared=/\/s\/([^/]+)\/?$/.exec(location.pathname);
 if(shared){ // a shared link wins over what this browser remembered

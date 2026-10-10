@@ -12,4 +12,6 @@ Read `docs/knowledge.md` (verified product facts behind every wizard rule) and `
   a schema failure means the generator emits a field Kong doesn't accept: fix the generator, not the fixture.
 - Generated config must follow Kong Gateway 3.16 / AI Gateway 2.2 field names. When adding an option, verify the field
   in the Kong source or docs first; `labMatch()` badges only paths that were actually run in a lab.
+- Versioning: patch for UI and hardening changes, minor for new wizard options or outputs, major for an ID format change.
+- Actions are pinned by commit SHA and the base image by digest (Actions settings require SHA pinning); let Dependabot bump them.
 - No Kong-internal material (roadmap IDs, internal tickets, Slack, customer names): this repo is public-facing.

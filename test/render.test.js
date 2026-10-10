@@ -180,3 +180,20 @@ test("the home page starts empty; remembered answers wait behind Resume; Start o
   assert.equal(w.localStorage.getItem("iwb"), null, "Start over forgets the answers");
   w.close();
 });
+
+test("analytics consent: banner until the visitor chooses, Consent Mode updated, choice remembered", () => {
+  const w = openPage(null), doc = w.document;
+  const consentCalls = () => [...w.dataLayer].filter(a => a[0] === "consent").map(a => `${a[1]}:${a[2].analytics_storage}`);
+  assert.equal(doc.getElementById("consent").hidden, false, "banner on a first visit");
+  assert.deepEqual(consentCalls(), ["default:denied"], "no analytics storage before a choice");
+  doc.getElementById("c-accept").click();
+  assert.equal(doc.getElementById("consent").hidden, true);
+  assert.deepEqual(consentCalls(), ["default:denied", "update:granted"]);
+  assert.equal(w.localStorage.getItem("iwb-consent"), "granted");
+  w.close();
+  const dom = new JSDOM(HTML, { url: "https://builder.test/identity-paths/", runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(win) { win.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} }); win.Element.prototype.scrollIntoView = () => {};
+      win.localStorage.setItem("iwb-consent", "denied"); } });
+  assert.equal(dom.window.document.getElementById("consent").hidden, true, "a stored choice hides the banner");
+  dom.window.close();
+});
