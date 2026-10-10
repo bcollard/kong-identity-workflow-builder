@@ -19,11 +19,11 @@ function pageHtml(version = "dev") {
 
 function loadLogic(version = "dev") {
   const html = pageHtml(version);
-  let js = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"));
-  const cut = js.indexOf(MARKER);
+  const cut = html.indexOf(MARKER);
   if (cut < 0) throw new Error("result rendering marker not found");
+  const js = html.slice(html.lastIndexOf("<script>", cut) + 8, cut); // the app script, not the analytics tag
   const ctx = vm.createContext({ console });
-  vm.runInContext(`${js.slice(0, cut)}\nthis.API={${EXPORTS}};`, ctx);
+  vm.runInContext(`${js}\nthis.API={${EXPORTS}};`, ctx);
   return ctx.API;
 }
 

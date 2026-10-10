@@ -1,11 +1,6 @@
 // Group wizard paths into runtime-equivalent classes (analytics choices don't change gateway behaviour)
-const fs = require("fs"), vm = require("vm");
-const html = fs.readFileSync(__dirname + "/../site/index.html", "utf8");
-let js = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"));
-js = js.slice(0, js.indexOf("/* ---------- result rendering"));
-const ctx = vm.createContext({ console });
-vm.runInContext(js + "\nthis.API={S,visibleSteps};", ctx);
-const X = ctx.API, S = X.S;
+const X = require("../server/logic").loadLogic();
+const S = X.S;
 const subsets = a => a.reduce((acc, x) => acc.concat(acc.map(s => [...s, x])), [[]]).filter(s => s.length);
 const all = [], classes = new Map();
 (function walk(i) {

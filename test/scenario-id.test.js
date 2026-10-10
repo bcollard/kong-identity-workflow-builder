@@ -48,7 +48,8 @@ test("codes are append-only compared with the last release tag", t => {
   try { tag = execFileSync("git", ["describe", "--tags", "--abbrev=0", "--match", "v*"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); }
   catch { return t.skip("no release tag yet"); }
   const html = execFileSync("git", ["show", `${tag}:site/index.html`], { encoding: "utf8" });
-  const src = html.slice(html.indexOf("<script>") + 8, html.indexOf("/* ---------- result rendering"));
+  const cut = html.indexOf("/* ---------- result rendering");
+  const src = html.slice(html.lastIndexOf("<script>", cut) + 8, cut);
   const ctx = vm.createContext({});
   vm.runInContext(`${src}\nthis.R={ID_STEPS,CODES};`, ctx);
   const old = ctx.R;
