@@ -12,6 +12,15 @@
   6. AI Cost Management subjects and tags (needs an org enabled for the Beta and model prices).
 - Add a "copy all" export (zip or single markdown) of the generated config.
 
+## End-to-end runs from a scenario ID
+
+Given an ID: `node tools/scenario.js <id> --out dir` gives the answers and files. Next steps:
+
+- Self-managed: marina cluster with the scenario's Kong version, `deck gateway sync` / `deck ai sync` of `dir/decl.yaml`,
+  Keycloak standing in for Okta / Entra / AD FS (same claim names), mock upstreams, then one request per sequence step.
+- Konnect: reuse the lab helpers (control plane, Kong Identity, principals) with the same request checks.
+- Bulk: `deck gateway validate --online` on every runtime class against local 3.15 / 3.16 / AI Gateway 2.2 control planes.
+
 ## Wizard variables not covered yet
 
 | Variable | Why it matters |
@@ -21,7 +30,6 @@
 | MCP OAuth (`ai-mcp-oauth2`) | MCP clients discovering the auth server through protected-resource metadata |
 | mTLS clients | Certificate-bound callers; principal identity by certificate |
 | Several control planes or environments | Consumer Group UUIDs per control plane vs names in principal metadata |
-| Self-managed AI Gateway | `deck ai sync` output instead of kongctl, no principals |
 | Self-managed Terraform | The Terraform tab is hidden for self-managed control planes; the `kong/kong-gateway` provider could fill it |
 | Dev Portal apps on AI routes | ACE on a control plane that also carries AI plugins |
 

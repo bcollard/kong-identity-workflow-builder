@@ -1,24 +1,6 @@
 // Load the wizard's pure logic (everything above "result rendering") from site/index.html into a VM context.
-const fs = require("fs");
-const vm = require("vm");
-const path = require("path");
 
-const PAGE = path.join(__dirname, "../../site/index.html");
-const MARKER = "/* ---------- result rendering";
-const EXPORTS = "S,STEPS,IDP,WHO,visibleSteps,prune,derive,buildSeq,genDeclarative,genApi,genTf,labMatch,outputTabs";
-
-function pageHtml() { return fs.readFileSync(PAGE, "utf8"); }
-
-function loadLogic() {
-  const html = pageHtml();
-  let js = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"));
-  const cut = js.indexOf(MARKER);
-  if (cut < 0) throw new Error("result rendering marker not found");
-  js = js.slice(0, cut);
-  const ctx = vm.createContext({ console });
-  vm.runInContext(`${js}\nthis.API={${EXPORTS}};`, ctx);
-  return ctx.API;
-}
+const { PAGE, pageHtml, loadLogic } = require("../../server/logic");
 
 // Control planes in scope. Default: self-managed only. IWB_DEPLOY=self,konnect runs the Konnect paths too.
 const DEPLOYS = (process.env.IWB_DEPLOY || "self").split(",").map(x => x.trim()).filter(Boolean);

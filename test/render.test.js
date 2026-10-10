@@ -8,9 +8,9 @@ const X = loadLogic();
 const CLASSES = runtimeClasses(allPaths(X));
 const HTML = pageHtml();
 
-function openPage(saved) {
+function openPage(saved, url = "https://builder.test/identity-paths/") {
   const dom = new JSDOM(HTML, {
-    url: "https://builder.test/",
+    url,
     runScripts: "dangerously",
     pretendToBeVisual: true,
     beforeParse(w) {
@@ -129,5 +129,27 @@ test("disabled options can't be selected", () => {
   assert.equal(portal.getAttribute("aria-disabled"), "true");
   portal.click();
   assert.equal(portal.getAttribute("aria-pressed"), "false");
+  w.close();
+});
+
+test("a shared link opens the scenario, ignores what the browser remembered, and the address bar follows edits", () => {
+  const s = CLASSES.find(c => c.product === "api" && c.record === "consumers" && c.analytics.includes("prom"));
+  const id = X.scenarioId(s, "0.9.0");
+  const other = CLASSES.find(c => c.product !== s.product);
+  const w = openPage({ S: other, cur: "analytics" }, `https://builder.test/identity-paths/s/${id}`), doc = w.document;
+  assert.equal(doc.getElementById("result").hidden, false);
+  assert.equal(text(doc.getElementById("sid")), X.scenarioId(s, X.APP_VERSION), "re-minted with the running version");
+  assert.match(text(doc.getElementById("notice")), /Shared from v0\.9\.0/);
+  assert.equal(w.location.pathname, `/identity-paths/s/${X.scenarioId(s, X.APP_VERSION)}`);
+  doc.getElementById("b-reset").click();
+  assert.equal(w.location.pathname, "/identity-paths/", "incomplete answers: base URL");
+  w.close();
+});
+
+test("a broken link explains itself and leaves the wizard usable", () => {
+  const w = openPage(null, "https://builder.test/identity-paths/s/v1.0.0-1111101221040H9"), doc = w.document;
+  assert.match(text(doc.getElementById("notice")), /Can't open .*typo/);
+  assert.ok(doc.querySelectorAll("#question .opt").length > 0);
+  assert.equal(doc.getElementById("result").hidden, true, "no example loaded behind the error");
   w.close();
 });

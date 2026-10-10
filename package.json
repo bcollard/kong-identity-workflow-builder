@@ -1,15 +1,18 @@
 {
   "name": "kong-identity-workflow-builder",
   "private": true,
-  "description": "Static wizard; Node is only used for tests.",
+  "description": "Identity Paths builder: static wizard plus a small Node server (scenario links, version stamp).",
   "scripts": {
     "test": "node --test --test-reporter=spec test/*.test.js",
     "test:all": "IWB_DEPLOY=self,konnect node --test --test-reporter=spec test/*.test.js",
-    "classes": "node test/classes.js"
+    "classes": "node test/classes.js",
+    "start": "node server/server.js",
+    "scenario": "node tools/scenario.js"
   },
   "devDependencies": {
     "ajv": "^8.17.1",
     "jsdom": "^26.1.0",
     "js-yaml": "^4.1.0"
-  }
+  },
+  "version": "1.0.0"
 }

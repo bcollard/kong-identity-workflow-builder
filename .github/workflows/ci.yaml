@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the append-only codes test compares with the last release tag
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: actions/setup-go@v5   # runs ai-deck-converter for the deck ai sync tests

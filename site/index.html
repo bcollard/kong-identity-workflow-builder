@@ -94,6 +94,11 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .badge{font:700 11px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:7px 11px}
 .badge.ok{background:var(--accent);color:var(--accent-ink)}
 .badge.draft{border:1px solid var(--warn);color:var(--warn)}
+.res-tags{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.share{display:flex;gap:8px;align-items:center}
+.share code{font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;user-select:all}
+.notice{border:1px solid var(--warn);color:var(--text);border-radius:8px;padding:10px 14px;font-size:13px}
+.notice.info{border-color:var(--line)}
 .stage{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
 @media (max-width:980px){.stage{grid-template-columns:minmax(0,1fr)}}
 .diagram{overflow-x:auto;padding:8px 8px 0}
@@ -160,6 +165,8 @@ footer{color:var(--muted);font-size:12px}
     </div>
   </header>
 
+  <div class="notice" id="notice" role="status" hidden></div>
+
   <div class="builder">
     <nav class="panel stepper" id="stepper" aria-label="Steps"></nav>
     <section class="panel question" id="question" aria-live="polite"></section>
@@ -168,7 +175,7 @@ footer{color:var(--muted);font-size:12px}
 
   <section class="res" id="result" hidden></section>
 
-  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test.</footer>
+  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a></footer>
 </div>
 
 <script>
@@ -306,6 +313,7 @@ function prune(){ // drop answers that became invalid after an upstream change
   }
 }
 let cur="product";
+const BASE=(typeof location!=="undefined"?location.pathname:"/").replace(/\/s\/[^/]*\/?$/,"/").replace(/[^/]*$/,""); // e.g. /identity-paths/
 const save=()=>{try{localStorage.setItem("iwb",JSON.stringify({S,cur}))}catch(e){}};
 const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const label=(st,v)=>{const o=st.options(S).find(o=>o.v===v);return o?o.label:v};
@@ -1147,6 +1155,77 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
 /* Output tabs: Terraform targets Konnect only; the Konnect API tab only shows when there is something to call. */
 function outputTabs(s,cfg){ return ["decl",...(/Nothing to call/.test(cfg.api.text)?[]:["api"]),...(s.deploy==="konnect"?["tf"]:[])]; }
 
+/* ---------- scenario IDs ----------
+   An ID names one complete set of answers and the app version that minted it: v<semver>-<format><payload><check>.
+   The payload encodes the answers with permanent codes, so any later version can decode it. Same answers, same payload.
+   CODES and ID_STEPS are append-only: never reorder, reuse or delete an entry (a retired option keeps its code). */
+const APP_VERSION = "dev"; // the server replaces this with the release version
+const ID_FORMAT = "1";     // format 1: one char per single-choice step, two chars (10-bit mask) per multi-choice step
+const ID_STEPS = ["product","deploy","version","caller","target","cred","idp","record","access","plans","analytics"];
+const CODES = {
+  product:["api","ai","ai1"], deploy:["konnect","self"], version:["3.16","3.15"],
+  caller:["employees","apps","agents","portal"], target:["models","a2a","mcp"], cred:["oidc","cc","apikey"],
+  idp:["okta","entra","keycloak","adfs","ki"], record:["claims","principals","consumers","portalapp"],
+  access:["none","subcg","meta","claimacl","portal"],
+  plans:["none","tier-cg","tier-meta","bu-cg","bu-meta","llm","pkg","app-cond"],
+  analytics:["konnect","bu","cost","agentan","prom","otel"]};
+const B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"; // Crockford base32
+const MULTI_STEPS = new Set(["plans","analytics"]);
+const idCheck = str => B32[[...str].reduce((a,c,i)=>(a*31+c.charCodeAt(0)*(i+1))%32,7)];
+function scenarioPayload(s){
+  let out = ID_FORMAT;
+  for(const k of ID_STEPS){
+    if(MULTI_STEPS.has(k)){
+      let m = 0; for(const v of s[k]||[]){ const i = CODES[k].indexOf(v); if(i<0||i>9) throw new Error(`no code for ${k}=${v}`); m |= 1<<i; }
+      out += B32[m>>5] + B32[m&31];
+    } else {
+      const v = s[k]; const i = v==null ? -1 : CODES[k].indexOf(v);
+      if(v!=null&&(i<0||i>30)) throw new Error(`no code for ${k}=${v}`);
+      out += B32[i+1];
+    }
+  }
+  return out;
+}
+function scenarioId(s, version=APP_VERSION){ const body = `v${version}-${scenarioPayload(s)}`; return body + idCheck(body); }
+/** Decode an ID. Returns {version, state} or {error}. Unknown codes (from a newer version) are reported, not guessed. */
+function parseScenarioId(id){
+  const m = /^v([0-9a-z.+]+)-([0-9a-z]+)$/i.exec(String(id||"").trim()); // versions are plain semver (or "dev"), no "-"
+  if(!m) return {error:"Not a scenario ID."};
+  const version = m[1].toLowerCase(), rest = m[2].toUpperCase().replace(/[IL]/g,"1").replace(/O/g,"0"), payload = rest.slice(0,-1);
+  if(idCheck(`v${version}-${payload}`) !== rest.slice(-1)) return {error:"This ID has a typo (check character mismatch)."};
+  if(payload[0] !== ID_FORMAT) return {version, error:`ID format ${payload[0]} is newer than this app understands.`};
+  const state = {}, unknown = []; let p = 1;
+  const num = c => { const n = B32.indexOf(c); if(n<0) throw 0; return n; };
+  try{
+    for(const k of ID_STEPS){
+      if(MULTI_STEPS.has(k)){
+        const mask = num(payload[p])*32 + num(payload[p+1]); p += 2; state[k] = [];
+        for(let i=0;i<10;i++) if(mask&(1<<i)){ if(CODES[k][i]) state[k].push(CODES[k][i]); else unknown.push(`${k}#${i}`); }
+      } else {
+        const n = num(payload[p]); p += 1;
+        state[k] = n===0 ? null : CODES[k][n-1] ?? null;
+        if(n>0 && !CODES[k][n-1]) unknown.push(`${k}#${n-1}`);
+      }
+    }
+  }catch(e){ return {version, error:"This ID is truncated or malformed."}; }
+  if(p !== payload.length) return {version, error:"This ID is truncated or malformed."};
+  return {version, state, unknown};
+}
+/** Apply a decoded state to the live wizard. Reports what this version can't reproduce. */
+function openScenario(id){
+  const r = parseScenarioId(id);
+  if(r.error) return {ok:false, version:r.version, message:r.error};
+  Object.assign(S, {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]}, r.state);
+  const before = JSON.stringify(S); prune(); const after = JSON.stringify(S);
+  const dropped = ID_STEPS.filter(k => JSON.stringify(JSON.parse(before)[k]) !== JSON.stringify(S[k]));
+  const ok = !r.unknown.length && before === after && complete();
+  return {ok, version:r.version, dropped, unknown:r.unknown,
+    message: ok ? (r.version===APP_VERSION ? "" : `Shared from v${r.version}, opened with v${APP_VERSION}.`)
+      : `This scenario was shared from v${r.version} and isn't fully supported by v${APP_VERSION}`
+        + (r.unknown.length ? ` (unknown options: ${r.unknown.join(", ")})` : "")
+        + (dropped.length ? ` (answers no longer valid: ${dropped.join(", ")})` : "") + ". Pick the missing answers to continue."};
+}
+
 /* ---------- result rendering ---------- */
 let seq=null, step=0, timer=null, playing=false, tab="decl";
 const NS="http://www.w3.org/2000/svg";
@@ -1208,7 +1287,8 @@ function renderResult(){
     ["Access",STEPS.find(s=>s.id==="access").options(S).find(o=>o.v===S.access)?.label||"–"],
     ["Plans",S.plans.map(v=>label(STEPS.find(s=>s.id==="plans"),v)).join(", ")]];
   r.innerHTML=`
-   <div class="res-head"><h2>Your identity workflow</h2>${lab?`<span class="badge ok">Core path validated in the lab · ${lab}</span>`:`<span class="badge draft">Generated draft · not lab-tested</span>`}</div>
+   <div class="res-head"><h2>Your identity workflow</h2><div class="res-tags">${lab?`<span class="badge ok">Core path validated in the lab · ${lab}</span>`:`<span class="badge draft">Generated draft · not lab-tested</span>`}
+     <span class="share"><code id="sid" title="Scenario ID: the answers plus the version that generated this page">${scenarioId(S)}</code><button class="btn" id="bshare">Copy link</button></span></div></div>
    <div class="stage">
      <div class="panel"><div class="diagram" id="diagram"></div>
        <div class="caption" aria-live="polite"><span class="stepno" id="sn"></span><div><h4 id="sh"></h4><p id="sp"></p></div></div>
@@ -1232,6 +1312,8 @@ function renderResult(){
   document.getElementById("bnext").onclick=()=>{stop();moveTo(step+1,true)};
   const showTab=t=>{tab=t;r.querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));document.getElementById("code").textContent=CFG[t].text};
   r.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>showTab(b.dataset.t)); showTab(tab);
+  document.getElementById("bshare").onclick=e=>{const url=location.origin+BASE+"s/"+scenarioId(S);
+    navigator.clipboard.writeText(url).then(()=>{e.target.textContent="Link copied";setTimeout(()=>e.target.textContent="Copy link",1400)}).catch(()=>{})};
   document.getElementById("bcopy").onclick=e=>{const txt=document.getElementById("code").textContent;
     navigator.clipboard.writeText(txt).then(()=>{e.target.textContent="Copied";setTimeout(()=>e.target.textContent="Copy",1400)}).catch(()=>{const sel=getSelection(),rg=document.createRange();rg.selectNodeContents(document.getElementById("code"));sel.removeAllRanges();sel.addRange(rg)})};
 }
@@ -1239,12 +1321,23 @@ function renderResult(){
 function render(){
   if(!visibleSteps().some(s=>s.id===cur)) cur=visibleSteps()[0].id;
   renderStepper(); renderQuestion(); renderBlueprint(); renderResult(); save();
+  const want=complete()?BASE+"s/"+scenarioId(S):BASE; // the address bar always holds the shareable link
+  if(location.pathname!==want) try{history.replaceState(null,"",want+location.search)}catch(e){}
 }
+function notice(msg,info){const n=document.getElementById("notice");n.hidden=!msg;n.textContent=msg||"";n.className="notice"+(info?" info":"")}
 document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";render()};
 document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
-try{const st=JSON.parse(localStorage.getItem("iwb")||"null");if(st&&st.S){Object.assign(S,st.S);cur=st.cur||"product";prune()}}catch(e){}
-if(!S.product){Object.assign(S,{product:"ai",deploy:"konnect",caller:"apps",target:"models",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["llm"],analytics:["konnect","bu","cost"]});cur="analytics"}
+document.getElementById("appver").textContent=APP_VERSION==="dev"?"development build":"v"+APP_VERSION;
+const shared=/\/s\/([^/]+)\/?$/.exec(location.pathname);
+if(shared){ // a shared link wins over what this browser remembered
+  const r=openScenario(decodeURIComponent(shared[1]));
+  cur=r.ok?"analytics":(visibleSteps().find(st=>!answered(st))||visibleSteps()[0]).id;
+  notice(r.dropped||r.unknown?r.message:`Can't open ${shared[1]}: ${r.message}`, r.ok); // no dropped/unknown: the ID itself was rejected
+} else {
+  try{const st=JSON.parse(localStorage.getItem("iwb")||"null");if(st&&st.S){Object.assign(S,st.S);cur=st.cur||"product";prune()}}catch(e){}
+}
+if(!S.product&&!shared){Object.assign(S,{product:"ai",deploy:"konnect",caller:"apps",target:"models",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["llm"],analytics:["konnect","bu","cost"]});cur="analytics"}
 render();
 </script>
 </body>

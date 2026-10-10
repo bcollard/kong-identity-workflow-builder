@@ -1,0 +1,68 @@
+name: Release
+# Push a vX.Y.Z tag that matches package.json: tests run, the image is pushed to Artifact Registry and deployed
+# to Cloud Run (served at https://kong.runlocal.dev/identity-paths/). Infra lives in a private Terraform repo;
+# the repo variables below come from its outputs.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write   # GitHub release
+  id-token: write   # Workload Identity Federation
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGION: europe-west1
+  SERVICE: identity-paths
+  IMAGE: ${{ vars.IDENTITY_PATHS_IMAGE_REPO }}
+  PROJECT: ${{ vars.GCP_PROJECT }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://kong.runlocal.dev/identity-paths/
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the append-only codes test compares with the previous tag
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: test/tools/aigw-convert/go.mod, cache-dependency-path: test/tools/aigw-convert/go.sum }
+      - name: Tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm ci
+      - name: Tests
+        run: npm test
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build and push
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build --build-arg APP_VERSION="$V" -t "$IMAGE:$V" .
+          docker push "$IMAGE:$V"
+      - name: Deploy
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          gcloud run deploy "$SERVICE" --image "$IMAGE:$V" --region "$REGION" --project "$PROJECT" \
+            --update-env-vars "APP_VERSION=$V" --quiet
+      - name: Smoke test
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          URL=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" --format 'value(status.url)')
+          for i in $(seq 1 10); do
+            got=$(curl -sf "$URL/identity-paths/version.json" | jq -r .version) && [ "$got" = "$V" ] && exit 0
+            sleep 5
+          done
+          echo "expected $V, got ${got:-nothing}"; exit 1
+      - name: GitHub release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release create "$GITHUB_REF_NAME" --generated-notes --title "$GITHUB_REF_NAME" --verify-tag
