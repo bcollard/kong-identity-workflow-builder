@@ -112,5 +112,15 @@ test("server: routes, version stamp and scenario API", async () => {
     assert.equal((await get(`/identity-paths/api/scenarios/nope`)).code, 400);
     assert.equal(JSON.parse((await get("/identity-paths/version.json")).body).version, "1.4.0");
     assert.equal((await get("/identity-paths/nope")).code, 404);
+    // CSP allows exactly the page's inline scripts, as served
+    const csp = page.headers["content-security-policy"];
+    const crypto = require("crypto");
+    const inline = [...page.body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+    assert.equal(inline.length, 2, "Google tag loader + app");
+    for (const js of inline) assert.ok(csp.includes(`'sha256-${crypto.createHash("sha256").update(js).digest("base64")}'`), "inline script hash in CSP");
+    assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.equal(page.headers["strict-transport-security"], "max-age=31536000");
+    assert.doesNotMatch(page.body, / on[a-z]+="/, "no inline event handlers (CSP would block them)");
   } finally { server.close(); delete process.env.APP_VERSION; }
 });

@@ -185,7 +185,7 @@ footer{color:var(--muted);font-size:12px}
 
   <section class="res" id="result" hidden></section>
 
-  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a></footer>
+  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a></footer>
 </div>
 
 <script>
@@ -1360,7 +1360,9 @@ if(shared){ // a shared link wins over what this browser remembered
     const n=document.getElementById("notice"); n.hidden=false; n.className="notice info";
     n.textContent="This browser remembers answers from a previous visit.";
     const b=document.createElement("button"); b.className="btn"; b.id="b-resume"; b.textContent="Resume where you left off";
-    b.onclick=()=>{Object.assign(S,st.S);cur=st.cur||"product";prune();notice("");render()}; n.appendChild(b);
+    b.onclick=()=>{ // copy known answers only; prune() then drops values the wizard doesn't offer
+      for(const k of ID_STEPS) if(k in st.S) S[k]=MULTI_STEPS.has(k)?(Array.isArray(st.S[k])?st.S[k].filter(v=>typeof v==="string"):[]):(typeof st.S[k]==="string"?st.S[k]:null);
+      cur=STEPS.some(x=>x.id===st.cur)?st.cur:"product";prune();notice("");render()}; n.appendChild(b);
   }
 }
 render();
