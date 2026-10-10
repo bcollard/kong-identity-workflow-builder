@@ -99,6 +99,7 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .share code{font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;user-select:all}
 .notice{border:1px solid var(--warn);color:var(--text);border-radius:8px;padding:10px 14px;font-size:13px}
 .notice.info{border-color:var(--line)}
+.notice .btn{margin-left:10px}
 .stage{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
 @media (max-width:980px){.stage{grid-template-columns:minmax(0,1fr)}}
 .diagram{overflow-x:auto;padding:8px 8px 0}
@@ -314,7 +315,7 @@ function prune(){ // drop answers that became invalid after an upstream change
 }
 let cur="product";
 const BASE=(typeof location!=="undefined"?location.pathname:"/").replace(/\/s\/[^/]*\/?$/,"/").replace(/[^/]*$/,""); // e.g. /identity-paths/
-const save=()=>{try{localStorage.setItem("iwb",JSON.stringify({S,cur}))}catch(e){}};
+const save=()=>{if(!S.product)return;try{localStorage.setItem("iwb",JSON.stringify({S,cur}))}catch(e){}}; // a blank wizard never overwrites what the browser remembered
 const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 const label=(st,v)=>{const o=st.options(S).find(o=>o.v===v);return o?o.label:v};
 
@@ -1325,7 +1326,7 @@ function render(){
   if(location.pathname!==want) try{history.replaceState(null,"",want+location.search)}catch(e){}
 }
 function notice(msg,info){const n=document.getElementById("notice");n.hidden=!msg;n.textContent=msg||"";n.className="notice"+(info?" info":"")}
-document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";render()};
+document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
 document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
 document.getElementById("appver").textContent=APP_VERSION==="dev"?"development build":"v"+APP_VERSION;
@@ -1335,9 +1336,15 @@ if(shared){ // a shared link wins over what this browser remembered
   cur=r.ok?"analytics":(visibleSteps().find(st=>!answered(st))||visibleSteps()[0]).id;
   notice(r.dropped||r.unknown?r.message:`Can't open ${shared[1]}: ${r.message}`, r.ok); // no dropped/unknown: the ID itself was rejected
 } else {
-  try{const st=JSON.parse(localStorage.getItem("iwb")||"null");if(st&&st.S){Object.assign(S,st.S);cur=st.cur||"product";prune()}}catch(e){}
+  // the home page starts empty; answers this browser remembered are one click away
+  let st=null; try{st=JSON.parse(localStorage.getItem("iwb")||"null")}catch(e){}
+  if(st&&st.S&&st.S.product){
+    const n=document.getElementById("notice"); n.hidden=false; n.className="notice info";
+    n.textContent="This browser remembers answers from a previous visit.";
+    const b=document.createElement("button"); b.className="btn"; b.id="b-resume"; b.textContent="Resume where you left off";
+    b.onclick=()=>{Object.assign(S,st.S);cur=st.cur||"product";prune();notice("");render()}; n.appendChild(b);
+  }
 }
-if(!S.product&&!shared){Object.assign(S,{product:"ai",deploy:"konnect",caller:"apps",target:"models",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["llm"],analytics:["konnect","bu","cost"]});cur="analytics"}
 render();
 </script>
 </body>

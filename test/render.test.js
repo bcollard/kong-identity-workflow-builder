@@ -19,7 +19,9 @@ function openPage(saved, url = "https://builder.test/identity-paths/") {
       if (saved) w.localStorage.setItem("iwb", JSON.stringify(saved));
     },
   });
-  return dom.window;
+  const w = dom.window;
+  if (saved && !/\/s\//.test(url)) w.document.getElementById("b-resume")?.click(); // remembered answers open on Resume
+  return w;
 }
 const text = el => (el ? el.textContent.replace(/\s+/g, " ").trim() : "");
 
@@ -151,5 +153,30 @@ test("a broken link explains itself and leaves the wizard usable", () => {
   assert.match(text(doc.getElementById("notice")), /Can't open .*typo/);
   assert.ok(doc.querySelectorAll("#question .opt").length > 0);
   assert.equal(doc.getElementById("result").hidden, true, "no example loaded behind the error");
+  w.close();
+});
+
+test("the home page starts empty; remembered answers wait behind Resume; Start over forgets them", () => {
+  let w = openPage(null), doc = w.document;
+  assert.equal(doc.getElementById("result").hidden, true, "no example on a first visit");
+  assert.equal(doc.getElementById("notice").hidden, true);
+  assert.equal(text(doc.querySelector("#question h2")), "Which gateway receives the calls?", "step 1");
+  assert.equal(w.location.pathname, "/identity-paths/");
+  w.close();
+
+  const s = CLASSES.find(c => c.product === "api");
+  const dom = new JSDOM(HTML, { url: "https://builder.test/identity-paths/", runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(win) { win.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} }); win.Element.prototype.scrollIntoView = () => {};
+      win.localStorage.setItem("iwb", JSON.stringify({ S: s, cur: "analytics" })); } });
+  w = dom.window; doc = w.document;
+  assert.equal(doc.getElementById("result").hidden, true, "remembered answers aren't applied on their own");
+  assert.match(text(doc.getElementById("notice")), /remembers answers/);
+  assert.ok(JSON.parse(w.localStorage.getItem("iwb")).S.product, "the empty wizard doesn't overwrite them");
+  doc.getElementById("b-resume").click();
+  assert.equal(doc.getElementById("result").hidden, false);
+  assert.equal(doc.getElementById("notice").hidden, true);
+  assert.equal(w.location.pathname, `/identity-paths/s/${X.scenarioId(s, X.APP_VERSION)}`);
+  doc.getElementById("b-reset").click();
+  assert.equal(w.localStorage.getItem("iwb"), null, "Start over forgets the answers");
   w.close();
 });
