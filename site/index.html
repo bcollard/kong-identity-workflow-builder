@@ -131,6 +131,16 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}
 .grid2 .panel{padding:16px;display:flex;flex-direction:column;gap:10px}
 .grid2 .panel.full{grid-column:1/-1}
+.howto{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.howto ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.howto .step b{margin-right:6px}
+.howto .it{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;margin-top:4px}
+.howto .or{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.howto .note{color:var(--muted);font-size:12px;margin-top:4px}
+.role{font:700 10px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:4px 7px;border:1px solid var(--line)}
+.role.required{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.role.partial{border-style:dashed}
+.tablink{font:inherit;color:var(--accent-text);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
 .consent{position:fixed;left:16px;right:16px;bottom:16px;z-index:10;max-width:760px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:var(--panel,#0a1f12);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13px}
 .consent div{display:flex;gap:8px}
 .tablebox{overflow-x:auto}
@@ -391,6 +401,7 @@ function derivePortal(s){
     "Each API linked to ACE can have at most 1,000 operations.",
     "The first request of an application waits on a Kong Identity principal lookup, then it is cached."];
   const notes=["The portal registration replaces subscription groups: no sub-CG, no ACL plugin."];
+  if(gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
   if(s.cred==="cc") notes.push(`Each application becomes a client in ${idp.label} through DCR; credential_claim ${credClaim} identifies it.`);
   if(co) notes.push("Mapping applications to Consumers keeps Consumer-scoped plugins, at the cost of one Consumer per application per control plane.");
   const an=[], A=s.analytics||[];
@@ -425,6 +436,7 @@ function derive(s){
   const authStrategy = ai;
   // warnings
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model or agent: callers from another issuer need their own route.");
+  if(!ai && gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
   if(ai) warns.push(s.access==="subcg"
     ? "AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first."
     : "AI Gateway answers 401 for a missing or unknown token: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
@@ -671,7 +683,7 @@ ${s.access==="claimacl"?`          acl_attribute_type: oauth_access_token\n     
   if(A.includes("prom")) glob.push(`  - name: prometheus\n    config: { ai_metrics: true, status_code_metrics: true }`);
   if(A.includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, enable_ai_metrics: true, enable_request_metrics: true${d.pr&&gw316(s)?", enable_principal_attribute: true":""} }`);
   const consumers = d.co?`consumers:\n  - username: ${d.who.name}\n${d.auth.plugin==="key-auth"?"    keyauth_credentials: [{ key: \"<generated>\" }]\n":`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${g.length?`    groups: [${g.map(x=>`{ name: ${x.name} }`).join(", ")}]\n`:""}`:"";
-  return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-ai":""}
+  return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-ai":"\n# needs a database-backed control plane: DB-less nodes take the same file with POST /config"+""}
 # Kong Gateway ${s.version||"3.16"} + AI plugins (AI Gateway 1.x)
 _format_version: "3.0"
 ${cg.length?`consumer_groups:\n${cg.join("\n")}\n`:""}${consumers}services:
@@ -782,6 +794,7 @@ ${d.auth.plugin==="key-auth"?`    credentials: [{ name: ${d.who.name}-key, type:
     config: { auth: { type: basic, headers: [{ name: Authorization, value: "{vault://env/openai-auth-header}" }] } }   # OPENAI_AUTH_HEADER="Bearer sk-..." on the data plane
 `:"";
       return {lang:"yaml",title:"deck ai sync aigw.yaml",text:`# deck ai sync aigw.yaml   (self-managed; preview the lowered config with: deck file ai2kong -s aigw.yaml)
+# needs a database-backed control plane: DB-less nodes take the converted file with POST /config
 auth_strategies:
 ${flat(strat.replace(/^/gm,"    ")).replace(/^/gm,"")}
 ${cgsSelf?`consumer_groups:\n${cgsSelf}\n`:""}${consSelf}${pol.length?`policies:\n${flat(pol.join("\n").replace(/^/gm,"    "))}\n`:""}${prov}${ents}`};
@@ -831,10 +844,10 @@ ${d.pr?"          identity_realms: []\n          principals: { enabled: true, di
   if(d.plans.includes("bu-meta")) glob.push(`  - name: rate-limiting              # org admin · BU plan from principal metadata
     config: { minute: 60, limit_by: principal, policy: local }
     expressions: { minute: principal.metadata.bu_rl_minute }`);
-  if((s.analytics||[]).includes("prom")) glob.push(`  - name: prometheus\n    config: { status_code_metrics: true, latency_metrics: true }\n  - name: http-log                   # identity labels for Grafana (Vector log_to_metric)\n    config:\n      http_endpoint: http://vector.observability:8686/\n      custom_fields_by_lua:\n        user: "local c = kong.client.get_credential(); return c and c.id"\n        bu: "local gs = kong.client.get_consumer_groups() or {}; for _, g in ipairs(gs) do if g.name:sub(1,3) == 'bu-' then return g.name end end"`);
+  if((s.analytics||[]).includes("prom")) glob.push(`  - name: prometheus\n    config: { status_code_metrics: true, latency_metrics: true }\n  - name: http-log                   # identity labels for Grafana (Vector log_to_metric)\n    config:\n      http_endpoint: http://vector.observability:8686/\n      custom_fields_by_lua:\n        user: "${d.co?"local c = kong.client.get_consumer(); if c then return c.username end; local cr = kong.client.get_credential(); return cr and cr.id":"local c = kong.client.get_credential(); return c and c.id"}"\n        bu: "local gs = kong.client.get_consumer_groups() or {}; for _, g in ipairs(gs) do if g.name:sub(1,3) == 'bu-' then return g.name end end"`);
   if((s.analytics||[]).includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, push_interval: 5, enable_request_metrics: true${d.pr&&gw316(s)?", enable_principal_attribute: true":""} }`);
   const consumers = d.co?`consumers:\n  - username: ${d.who.name}\n${d.auth.plugin==="key-auth"?"    keyauth_credentials: [{ key: \"<generated>\" }]\n":`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${d.groups.length?`    groups: [${d.groups.map(g=>`{ name: ${g.name} }`).join(", ")}]\n`:""}`:"";
-  return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-apis":""}
+  return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-apis":"\n# needs a database-backed control plane: DB-less nodes take the same file with POST /config"}
 _format_version: "3.0"
 ${cg.length?`consumer_groups:\n${cg.join("\n")}\n`:""}${consumers}services:
   - name: ${d.tgt.name}
@@ -846,6 +859,29 @@ ${authPlug}${acl}
 ${glob.length?`plugins:\n${glob.join("\n")}\n`:""}`};
 }
 
+
+/* Each Konnect API block says whether Terraform can do the same, or only the API (or only the console) can. */
+const API_TAGS=[
+  [/^# Kong Identity auth server, scope and client/, "tf:konnect_identity_auth_server, konnect_identity_auth_server_scope, konnect_identity_auth_server_client"],
+  [/^# (Claim templated|Groups claim templated)/, "tf:konnect_identity_auth_server_claim"],
+  [/^# Directory/, "tf:konnect_identity_directory"],
+  [/^# (Principal|API key, generated|Link the)/, "api"],
+  [/^# consumer_groups metadata takes/, "read"],
+  [/^# Register the calling agent in Konnect Catalog/, "api"],
+  [/^# Kong Identity as DCR provider/, "tf:konnect_dcr_provider"],
+  [/^# DCR provider/, "tf:konnect_dcr_provider"],
+  [/^# Application auth strategy/, "tf:konnect_application_auth_strategy"],
+  [/^# API, linked to the control plane/, "tf:konnect_api, konnect_api_implementation"],
+  [/^# Publish to the portal/, "tf:konnect_api_publication"],
+  [/^# API package /, "console"],
+  [/^# Per-application plan/, "read"]];
+function tagApiBlock(b){
+  const m=API_TAGS.find(([re])=>re.test(b)); if(!m) return b;
+  const line=m[1]==="api"?"# ↳ API only: no decK, kongctl or Terraform resource":m[1]==="read"?"# ↳ lookup: read-only"
+    :m[1]==="console"?"# ↳ console only: no API or Terraform resource yet"
+    :`# ↳ or Terraform: ${m[1].slice(3)}`;
+  const nl=b.indexOf("\n"); return nl<0?`${b}\n${line}`:`${b.slice(0,nl)}\n${line}${b.slice(nl)}`;
+}
 function genApiPortal(s,d){
   const o=[`export KONNECT_API=https://us.api.konghq.com   # your region\nexport H="Authorization: Bearer $KONNECT_TOKEN"`];
   if(s.cred==="cc"){
@@ -876,7 +912,7 @@ curl -s -X PUT $KONNECT_API/v3/apis/$API/publications/$PORTAL -H "$H" -H 'conten
 # (operations are mapped from the OpenAPI spec)`);
   if(d.plans.includes("app-cond")&&!d.co) o.push(`# Per-application plan: the principal ID is the application ID
 curl -s "$KONNECT_API/v3/portals/$PORTAL/applications?filter%5Bname%5D%5Beq%5D=${d.who.name}" -H "$H" | jq -r '.data[0].id'`);
-  return {lang:"bash",title:"Konnect API",text:o.join("\n\n")};
+  return {lang:"bash",title:"Konnect API",text:o.join("\n\n").split(/\n\n(?=# )/).map(tagApiBlock).join("\n\n")};
 }
 function genApi(s,d){
   if(d.portal) return genApiPortal(s,d);
@@ -926,7 +962,7 @@ A=$(curl -s -X POST "$KONNECT_API/v1/agents?create_version=false" -H "$H" -H 'co
 curl -s -X POST $KONNECT_API/v1/agents/$A/principals -H "$H" -H 'content-type: application/json' \\
   -d '{"principal_id":"'$P'","directory_id":"'$DIR'"}'`);
   if(out.length===1) out.push("# Nothing to call: everything for this workflow is declarative.");
-  return {lang:"bash",title:"Konnect API",text:out.join("\n\n")};
+  return {lang:"bash",title:"Konnect API",text:out.join("\n\n").split(/\n\n(?=# )/).map(tagApiBlock).join("\n\n")};
 }
 
 function genTfPortal(s,d){
@@ -1182,6 +1218,30 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
 }
 
 /* Output tabs: Terraform targets Konnect only; the Konnect API tab only shows when there is something to call. */
+/** "How to apply": which tabs are required, which are alternatives, in which order. Pure; tested. */
+function applyPlan(s,d,cfg,tabs){
+  const has=t=>tabs.includes(t), api=cfg.api.text, steps=[];
+  const apiOnly=/↳ API only/.test(api), tfAlt=/↳ or Terraform/.test(api);
+  const declName=d.ai?(s.deploy==="konnect"?"kongctl":"deck ai sync"):"decK";
+  if(has("api")){
+    const items=[{tab:"api",role:apiOnly?"required":"choice",text:apiOnly
+      ?(d.portal?"Portal applications and registrations, plus the blocks marked \"API only\".":"Principals, their identities and API keys exist only in the Konnect API (blocks marked \"API only\").")
+      :"Each block names its Terraform equivalent."}];
+    if(has("tf")&&tfAlt) items.push({tab:"tf",role:apiOnly?"partial":"choice",text:apiOnly
+      ?"Can replace the blocks marked \"or Terraform\", not the API-only ones.":"Same objects as the API calls."});
+    steps.push({title:d.portal?"Dev Portal setup":d.pr?"Identity setup":"Kong Identity setup",items,
+      note:[!has("tf")&&tfAlt?"The kong/konnect Terraform provider can also create the blocks marked \"or Terraform\".":"",
+            /Catalog → API packages/.test(api)?"API packages are configured in the console (Catalog → API packages).":""].filter(Boolean).join(" ")});
+  }
+  const gw=[{tab:"decl",role:has("tf")?"recommended":"required",text:"The complete gateway configuration."}];
+  if(has("tf")) gw.push({tab:"tf",role:"partial",text:d.ai?"Creates the gateway, auth strategies and groups; model, agent and MCP bodies stay in kongctl."
+    :"A starting point for the same entities; not every plugin is written out."});
+  steps.push({title:"Gateway configuration",items:gw,
+    note:s.deploy==="self"?`${declName==="kongctl"?"":declName+" needs a database-backed control plane; DB-less nodes take the same file with POST /config."}`
+      :"Pick one tool per entity: managing the same entity with decK/kongctl and Terraform makes them overwrite each other."});
+  if(steps.length>1) steps[0].note=[steps[0].note,"Do this first: the gateway configuration refers to it."].filter(Boolean).join(" ");
+  return steps;
+}
 function outputTabs(s,cfg){ return ["decl",...(/Nothing to call/.test(cfg.api.text)?[]:["api"]),...(s.deploy==="konnect"?["tf"]:[])]; }
 
 /* ---------- scenario IDs ----------
@@ -1306,6 +1366,9 @@ function renderResult(){
   const lab=labMatch(S);
   const CFG={decl:genDeclarative(S,d),api:genApi(S,d),tf:genTf(S,d)};
   const tabs=outputTabs(S,CFG);
+  const PLAN=applyPlan(S,d,CFG,tabs);
+  const TABNAME={decl:d.ai?(S.deploy==="konnect"?"kongctl":"deck ai sync"):"decK",api:"Konnect API",tf:"Terraform"};
+  const ROLE={required:"required",recommended:"recommended",choice:"either",partial:"partial"};
   if(!tabs.includes(tab)) tab="decl";
   const summary=[
     ["Product",`${S.product==="ai"?"AI Gateway 2.2":S.product==="ai1"?`Kong Gateway ${S.version} + AI plugins (AI Gateway 1.x)`:`Kong Gateway ${S.version}`} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
@@ -1331,7 +1394,8 @@ function renderResult(){
      <div class="panel"><h3>Analytics</h3>${d.an.length?`<div class="tablebox"><table><thead><tr><th>Tool</th><th>Where</th><th>Dimensions</th></tr></thead><tbody>${d.an.map(a=>`<tr><td>${a.tool}</td><td>${esc(a.where)}</td><td>${esc(a.dims)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">No analytics selected.</p>`}</div>
      <div class="panel full"><h3>Watch out</h3><ul class="plain warns">${[...d.warns,...d.notes].map(w=>`<li><span>${esc(w)}</span></li>`).join("")||"<li><span>Nothing specific.</span></li>"}</ul></div>
    </div>
-   <div class="panel"><div class="tabs" role="tablist">
+   <div class="panel"><div class="howto" id="howto"><h3>How to apply</h3><ol>${PLAN.map(st=>`<li class="step"><b>${esc(st.title)}</b>${st.items.map((it,i)=>`${i?`<span class="or">${it.role==="choice"||it.role==="partial"?"or":"and"}</span>`:""}<span class="it"><button class="tablink" data-goto="${it.tab}">${esc(TABNAME[it.tab])}</button><span class="role ${it.role}">${ROLE[it.role]}</span><span>${esc(it.text)}</span></span>`).join("")}${st.note?`<div class="note">${esc(st.note)}</div>`:""}</li>`).join("")}</ol></div>
+     <div class="tabs" role="tablist">
        <button role="tab" data-t="decl">${d.ai?(S.deploy==="konnect"?"kongctl":"deck ai sync"):"decK"}</button>
        ${tabs.includes("api")?`<button role="tab" data-t="api">Konnect API</button>`:""}${tabs.includes("tf")?`<button role="tab" data-t="tf">Terraform</button>`:""}</div>
      <div class="codewrap"><button class="btn copy" id="bcopy">Copy</button><pre class="code" id="code"></pre></div></div>`;
@@ -1341,6 +1405,9 @@ function renderResult(){
   document.getElementById("bnext").onclick=()=>{stop();moveTo(step+1,true)};
   const showTab=t=>{tab=t;r.querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));document.getElementById("code").textContent=CFG[t].text};
   r.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>showTab(b.dataset.t)); showTab(tab);
+  r.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{showTab(b.dataset.goto);document.getElementById("code").scrollIntoView({block:"nearest"})});
+  const req=new Set(PLAN.flatMap(st=>st.items.filter(i=>i.role==="required").map(i=>i.tab)));
+  r.querySelectorAll("[data-t]").forEach(b=>{if(req.has(b.dataset.t)&&tabs.length>1)b.insertAdjacentHTML("beforeend",' <span class="role required">required</span>')});
   document.getElementById("bshare").onclick=e=>{const url=location.origin+BASE+"s/"+scenarioId(S);
     navigator.clipboard.writeText(url).then(()=>{e.target.textContent="Link copied";setTimeout(()=>e.target.textContent="Copy link",1400)}).catch(()=>{})};
   document.getElementById("bcopy").onclick=e=>{const txt=document.getElementById("code").textContent;

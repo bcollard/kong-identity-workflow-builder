@@ -48,6 +48,13 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 
 ## Plugin rules the builder encodes
 
+- Kong Gateway 3.16 routes default to `protocols: [https]` (`kong/db/schema/entities/routes.lua`); a plain-HTTP call gets
+  **426 Upgrade Required** (`lab-verified` on 3.16.0.0).
+- `deck gateway sync` needs a database-backed control plane: a DB-less node answers 405 (`cannot create or update
+  'consumers' entities when not using a database`). DB-less nodes load the same file with `POST /config` (`lab-verified`).
+- `kong.client.get_credential().id` is the credential's UUID; for Consumer records, log `kong.client.get_consumer().username`
+  to get a readable caller label.
+
 | Rule | Consequence |
 |---|---|
 | A plugin is unique per `{name, route, service, consumer, consumer_group}`. `condition` isn't part of the key | Two `rate-limiting-advanced` instances with different conditions on one route are rejected. Use `expressions` instead. |

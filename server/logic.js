@@ -7,7 +7,7 @@ const path = require("path");
 const PAGE = path.join(__dirname, "../site/index.html");
 const MARKER = "/* ---------- result rendering";
 const VERSION_LINE = 'const APP_VERSION = "dev";';
-const EXPORTS = "S,STEPS,IDP,WHO,visibleSteps,prune,complete,derive,buildSeq,genDeclarative,genApi,genTf,labMatch,outputTabs," +
+const EXPORTS = "S,STEPS,IDP,WHO,visibleSteps,prune,complete,derive,buildSeq,genDeclarative,genApi,genTf,labMatch,outputTabs,applyPlan," +
   "APP_VERSION,ID_STEPS,CODES,scenarioPayload,scenarioId,parseScenarioId,openScenario";
 
 /** The page with the release version stamped in. */

@@ -197,3 +197,16 @@ test("analytics consent: banner until the visitor chooses, Consent Mode updated,
   assert.equal(dom.window.document.getElementById("consent").hidden, true, "a stored choice hides the banner");
   dom.window.close();
 });
+
+test("How to apply strip renders and its links switch the code tab", () => {
+  const s = CLASSES.find(c => c.deploy === "konnect" && c.record === "principals" && c.product === "api") || CLASSES.find(c => c.deploy === "self");
+  const w = openPage(null, `https://builder.test/identity-paths/s/${X.scenarioId(s, X.APP_VERSION)}`), doc = w.document;
+  const r = render(X, s);
+  const plan = X.applyPlan(s, r.d, r.cfg, r.tabs);
+  assert.equal(doc.querySelectorAll("#howto li.step").length, plan.length);
+  for (const b of doc.querySelectorAll("#howto [data-goto]")) {
+    b.click();
+    assert.equal(doc.getElementById("code").textContent, r.cfg[b.dataset.goto].text, `link to ${b.dataset.goto}`);
+  }
+  w.close();
+});

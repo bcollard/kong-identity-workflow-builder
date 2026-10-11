@@ -195,3 +195,35 @@ test("token groups only block callers when access is decided by subscription gro
   }
   report("consumer_groups_optional");
 });
+
+test("How to apply: every tab is placed, API-only sections make the API tab required, roles are valid", () => {
+  const ROLES = new Set(["required", "recommended", "choice", "partial"]);
+  for (const s of CLASSES) {
+    const { d, cfg, tabs } = parsed.get(label(s));
+    const plan = X.applyPlan(s, d, cfg, tabs);
+    const placed = new Set(plan.flatMap(st => st.items.map(i => i.tab)));
+    for (const t of tabs) if (!placed.has(t)) fail(s, `tab ${t} missing from How to apply`);
+    for (const st of plan) for (const i of st.items) {
+      if (!tabs.includes(i.tab)) fail(s, `How to apply points to hidden tab ${i.tab}`);
+      if (!ROLES.has(i.role)) fail(s, `role ${i.role}`);
+    }
+    const apiRole = plan.flatMap(st => st.items).find(i => i.tab === "api")?.role;
+    if (/↳ API only/.test(cfg.api.text) && tabs.includes("api") && apiRole !== "required") fail(s, "API-only sections but the API tab isn't required");
+    if (s.deploy === "self" && !/database-backed/.test(plan.at(-1).note) && !d.ai) fail(s, "self-managed decK without the database note");
+    // every section of the API tab carries a tag (except the env header)
+    if (tabs.includes("api")) for (const sec of cfg.api.text.split(/\n\n(?=# )/).slice(0)) {
+      if (/^export KONNECT_API/.test(sec)) continue;
+      if (/^# /.test(sec) && !/\n# ↳ /.test(sec)) fail(s, `untagged API section: ${sec.split("\n")[0]}`);
+    }
+  }
+  report("How to apply");
+});
+
+test("3.16 HTTPS-only route default is flagged for gateway products on 3.16", () => {
+  for (const s of CLASSES.filter(c => c.product !== "ai")) {
+    const { d } = parsed.get(label(s));
+    const flagged = [...d.warns].some(w => /protocols \[https\]/.test(w));
+    if (flagged !== (s.version !== "3.15")) fail(s, `3.16 HTTPS warning shown=${flagged}`);
+  }
+  report("3.16 HTTPS");
+});
