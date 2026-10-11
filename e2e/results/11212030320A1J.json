@@ -1,0 +1,124 @@
+{
+  "id": "v1.4.0-11212030320A1JH",
+  "payload": "11212030320A1J",
+  "date": "2026-10-11T20:07:57Z",
+  "builder": "v1.5.0",
+  "environment": "Kong Gateway with Postgres on kind, synced with decK; echo upstream; Vector, OpenTelemetry collector and Prometheus",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "0388c24a29bae1"
+  },
+  "passed": 13,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "substitution",
+      "what": "service orders-api url http://orders.internal:8080 → lab echo upstream"
+    },
+    {
+      "kind": "substitution",
+      "what": "consumer invoice-bot key <generated> → fixed test key"
+    },
+    {
+      "kind": "substitution",
+      "what": "opentelemetry metrics endpoint http://otel-collector:4318/v1/metrics → lab collector"
+    },
+    {
+      "kind": "fixture",
+      "what": "consumer e2e-nosub: groups [tier-bronze,bu-finance] without the subscription group"
+    }
+  ],
+  "checks": [
+    {
+      "step": "2",
+      "check": "no key → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "2",
+      "check": "unknown key → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "3-4",
+      "check": "invoice-bot (key on its Consumer, all groups) → orders-api",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "upstream sees the Consumer (X-Consumer-Username)",
+      "expected": "invoice-bot",
+      "actual": "invoice-bot",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "key hidden from the upstream (hide_credentials)",
+      "expected": "no",
+      "actual": "no",
+      "pass": true
+    },
+    {
+      "step": "5",
+      "check": "Consumer without the subscription group → 403",
+      "expected": "403",
+      "actual": "403",
+      "pass": true
+    },
+    {
+      "step": "6",
+      "check": "tier-bronze plan applies (RateLimit-Limit)",
+      "expected": "100",
+      "actual": "100",
+      "pass": true
+    },
+    {
+      "step": "6",
+      "check": "more than 100 calls in 5 s → 429s",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "BU-wide plan applies too (X-RateLimit-Limit-Minute)",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "8-9",
+      "check": "response comes from the upstream (echo)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "analytics",
+      "check": "Prometheus plugin exports orders-api requests",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "analytics",
+      "check": "http-log → Vector → Prometheus: caller \"invoice-bot\" attributed to its BU",
+      "expected": "bu-finance",
+      "actual": "bu-finance",
+      "pass": true
+    },
+    {
+      "step": "analytics",
+      "check": "OpenTelemetry metrics from this gateway reach Prometheus",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "id": "v1.2.0-12101113111003E",
+  "payload": "12101113111003",
+  "date": "2026-10-11T20:06:17Z",
+  "builder": "v1.5.0",
+  "environment": "Konnect AI Gateway created for the run, AI Gateway 2.2.0 data plane on kind; Keycloak (employees) or the Kong Identity auth server created by the API script (apps); mock LLM upstream",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "0fad99985ac7c5"
+  },
+  "passed": 10,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "env",
+      "what": "ai_gateway name acme-aigw → e2e-12101113111003e"
+    },
+    {
+      "kind": "env",
+      "what": "hybrid data plane certificate and proxy URL added"
+    },
+    {
+      "kind": "substitution",
+      "what": "auth_strategies(employees-auth).issuer https://keycloak.example.com/realms/acme/.well-known/openid-configuration → lab Keycloak realm"
+    },
+    {
+      "kind": "substitution",
+      "what": "model_providers(openai) Authorization {vault://env/openai-auth-header} → lab mock key (no vault on the lab data plane)"
+    },
+    {
+      "kind": "substitution",
+      "what": "model gpt-large target gpt-4.1 upstream → lab mock LLM"
+    }
+  ],
+  "checks": [
+    {
+      "step": "1-2",
+      "check": "Keycloak issues a token for alice (aud kong-gateway)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "no token → rejected",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "garbage token → rejected",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "4-6",
+      "check": "alice (ai-tier-standard, bu-finance) → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "bob (bu-logistics only: no group in this gateway) → gpt-large, access 'any authenticated caller'",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "dave (no known group) → gpt-large, access 'any authenticated caller'",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "alice is metered by the standard-tier token budget (rate-limit headers)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "alice's remaining budget decreases between calls",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "carol (premium tier: no rule in this gateway) is not metered",
+      "expected": "0",
+      "actual": "0",
+      "pass": true
+    },
+    {
+      "step": "8-10",
+      "check": "response comes from the upstream (mock LLM)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    }
+  ]
+}

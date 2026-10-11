@@ -32,7 +32,7 @@ function sample() {
   for (const c of CLASSES) {
     const k = `${c.product}/${c.deploy}/${c.caller}/${c.target}`;
     if (![...picked.values()].some(p => `${p.product}/${p.deploy}/${p.caller}/${p.target}` === k)) picked.set(label(c), c);
-    if (render(X, c).lab) picked.set(label(c), c);
+    if (render(X, c).lab || render(X, c).e2e) picked.set(label(c), c);
   }
   return [...picked.values()];
 }
@@ -60,7 +60,9 @@ test(`rendered result matches the computed blueprint (${SAMPLE.length} sampled c
     if (rows !== r.d.groups.length && !(r.d.groups.length === 0 && /None\./.test(text(groupPanel)))) e(`group rows ${rows} vs ${r.d.groups.length}`);
     // badge
     const badge = text(res.querySelector(".badge"));
-    if (r.lab ? !badge.includes(r.lab) : !/draft/i.test(badge)) e(`badge "${badge}" (lab=${r.lab})`);
+    const want = r.e2e?.current ? (r.e2e.failed ? /checks failed/ : /Tested end to end/) : r.e2e ? /earlier version/ : r.lab ? new RegExp(r.lab) : /draft/i;
+    if (!want.test(badge)) e(`badge "${badge}" (e2e=${r.e2e && (r.e2e.current ? "current" : "older")}, lab=${r.lab})`);
+    if (r.e2e && !doc.getElementById("e2e")) e("end-to-end panel missing");
     // tabs and code
     const tabs = [...res.querySelectorAll("[data-t]")].map(b => b.dataset.t);
     if (tabs.join() !== r.tabs.join()) e(`tabs [${tabs}] vs [${r.tabs}]`);

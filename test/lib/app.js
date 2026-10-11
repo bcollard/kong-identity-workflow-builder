@@ -44,7 +44,7 @@ function render(X, state) {
   Object.assign(X.S, JSON.parse(JSON.stringify(state)));
   const d = X.derive(X.S), seq = X.buildSeq(X.S, d);
   const cfg = { decl: X.genDeclarative(X.S, d), api: X.genApi(X.S, d), tf: X.genTf(X.S, d) };
-  return { s: JSON.parse(JSON.stringify(X.S)), d, seq, cfg, tabs: X.outputTabs(X.S, cfg), lab: X.labMatch(X.S) };
+  return { s: JSON.parse(JSON.stringify(X.S)), d, seq, cfg, tabs: X.outputTabs(X.S, cfg), lab: X.labMatch(X.S), e2e: X.e2eStatus(X.S, cfg) };
 }
 
 const label = s => CORE.map(f => s[f] ?? "-").join("/") + "/" + s.plans.join("+") + "/" + s.analytics.join("+");

@@ -27,6 +27,7 @@
   --accent:#ccff00; --accent-text:#ccff00; --accent-ink:#001408; --accent-soft:#ccff0022;
   --node:#4a4d49; --node-text:#ffffff; --focal:#ffffff; --focal-text:#000f06;
   --ok:#7ee08a; --bad:#ff7a6b; --warn:#ffc857; --add-bg:#ccff0026; --del-bg:#ff7a6b22;
+  --hl-key:#8fd3ff; --hl-str:#f0c674; --hl-num:#d7a8ff; --hl-kw:#ccff00; --hl-var:#ff9e64; --hl-com:#7d8a78;
   --display:"Funnel Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"Roboto Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   color-scheme:dark;
@@ -36,13 +37,15 @@
   --fg:#101110; --muted:#4a4d49; --faint:#b7bdb5;
   --accent:#ccff00; --accent-text:#3a4a00; --accent-ink:#001408; --accent-soft:#ccff0055;
   --node:#2d2e2c; --node-text:#ffffff; --focal:#001408; --focal-text:#ccff00;
-  --ok:#1e7a2e; --bad:#b3261e; --warn:#8a5a00; --add-bg:#ccff0066; --del-bg:#b3261e1a; color-scheme:light;}}
+  --ok:#1e7a2e; --bad:#b3261e; --warn:#8a5a00; --add-bg:#ccff0066; --del-bg:#b3261e1a; color-scheme:light;
+  --hl-key:#0b5cad; --hl-str:#8a5a00; --hl-num:#7a3e9d; --hl-kw:#3a4a00; --hl-var:#a33d00; --hl-com:#6b7268;}}
 :root[data-theme="light"]{
   --bg:#e7ede5; --surface:#ffffff; --raised:#f3f6f1; --line:#c5ccc1; --cross:#4b4e46;
   --fg:#101110; --muted:#4a4d49; --faint:#b7bdb5;
   --accent:#ccff00; --accent-text:#3a4a00; --accent-ink:#001408; --accent-soft:#ccff0055;
   --node:#2d2e2c; --node-text:#ffffff; --focal:#001408; --focal-text:#ccff00;
-  --ok:#1e7a2e; --bad:#b3261e; --warn:#8a5a00; --add-bg:#ccff0066; --del-bg:#b3261e1a; color-scheme:light;}
+  --ok:#1e7a2e; --bad:#b3261e; --warn:#8a5a00; --add-bg:#ccff0066; --del-bg:#b3261e1a; color-scheme:light;
+  --hl-key:#0b5cad; --hl-str:#8a5a00; --hl-num:#7a3e9d; --hl-kw:#3a4a00; --hl-var:#a33d00; --hl-com:#6b7268;}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--fg);font-family:var(--display);font-size:15px;line-height:1.5}
 .wrap{max-width:1320px;margin:0 auto;padding-inline:20px;padding-block:22px 64px;display:flex;flex-direction:column;gap:22px}
@@ -131,7 +134,7 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}
 .grid2 .panel{padding:16px;display:flex;flex-direction:column;gap:10px}
 .grid2 .panel.full{grid-column:1/-1}
-.howto{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.howto{display:flex;flex-direction:column;gap:8px;padding:16px 16px 12px}
 .howto ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px}
 .howto .step b{margin-right:6px}
 .howto .it{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;margin-top:4px}
@@ -155,7 +158,8 @@ th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut
 .tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
 .codewrap{position:relative;padding:12px}
 pre.code{margin:0;font:400 12px/1.55 var(--mono);background:var(--raised);border:1px solid var(--line);border-radius:4px;padding:12px;overflow:auto;max-height:560px;white-space:pre}
-pre.code .c{color:var(--muted)}
+pre.code .c{color:var(--hl-com);font-style:italic} pre.code .k{color:var(--hl-key)} pre.code .s{color:var(--hl-str)}
+pre.code .n{color:var(--hl-num)} pre.code .w{color:var(--hl-kw);font-weight:700} pre.code .v{color:var(--hl-var)} pre.code .p{color:var(--hl-var);font-style:italic}
 .copy{position:absolute;top:20px;right:22px}
 .empty{color:var(--muted);text-align:center;padding:28px 16px}
 .msg line,.msg path{stroke:var(--fg);stroke-width:1.4;fill:none}
@@ -201,7 +205,7 @@ footer{color:var(--muted);font-size:12px}
 
   <section class="res" id="result" hidden></section>
 
-  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Combinations marked "Validated in the lab" were run end to end on 2026-10-09; the others are generated drafts to test. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a>. Community project, not an official Kong product.</footer>
+  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Paths marked "Tested end to end" had these exact files applied to a running gateway and checked; the others are generated drafts. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a>. Community project, not an official Kong product.</footer>
   <div class="consent" id="consent" role="region" aria-label="Analytics consent" hidden>
     <span>This site uses Google Analytics cookies to count visits and popular scenarios. Nothing is sent about your answers beyond the page address.</span>
     <div><button class="btn" id="c-decline">Decline</button><button class="btn primary" id="c-accept">Accept</button></div>
@@ -837,18 +841,15 @@ ${d.pr?"          identity_realms: []\n          principals: { enabled: true, di
   if(s.access==="meta") acl=`\n      - name: acl\n        config:\n          allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions']`;
   if(s.access==="claimacl") acl=`\n      - name: acl\n        config: { allow: [${d.tgt.name}-users] }   # group names from authenticated_groups_claim`;
   const glob=[];
-  if(d.plans.includes("tier-meta")) glob.push(`  - name: rate-limiting-advanced     # API owner · limit from principal metadata
-    service: ${d.tgt.name}
-    config: { identifier: principal, limit: [10], window_size: [5], window_type: fixed }
-    expressions: { limit: [principal.metadata.rl_per_5s] }`);
-  if(d.plans.includes("bu-meta")) glob.push(`  - name: rate-limiting              # org admin · BU plan from principal metadata
-    config: { minute: 60, limit_by: principal, policy: local }
-    expressions: { minute: principal.metadata.bu_rl_minute }`);
+  const metaPlans=d.plans.filter(p=>p==="tier-meta"||p==="bu-meta");
+  const metaNote=metaPlans.length?`# Not in this file: the ${metaPlans.length>1?"plans":"plan"} read from principal metadata use plugin "expressions",
+# which decK can't sync yet (Kong/deck#2284). Apply ${metaPlans.length>1?"them":"it"} from the Konnect API or Terraform tab.
+`:"";
   if((s.analytics||[]).includes("prom")) glob.push(`  - name: prometheus\n    config: { status_code_metrics: true, latency_metrics: true }\n  - name: http-log                   # identity labels for Grafana (Vector log_to_metric)\n    config:\n      http_endpoint: http://vector.observability:8686/\n      custom_fields_by_lua:\n        user: "${d.co?"local c = kong.client.get_consumer(); if c then return c.username end; local cr = kong.client.get_credential(); return cr and cr.id":"local c = kong.client.get_credential(); return c and c.id"}"\n        bu: "local gs = kong.client.get_consumer_groups() or {}; for _, g in ipairs(gs) do if g.name:sub(1,3) == 'bu-' then return g.name end end"`);
   if((s.analytics||[]).includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, push_interval: 5, enable_request_metrics: true${d.pr&&gw316(s)?", enable_principal_attribute: true":""} }`);
   const consumers = d.co?`consumers:\n  - username: ${d.who.name}\n${d.auth.plugin==="key-auth"?"    keyauth_credentials: [{ key: \"<generated>\" }]\n":`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${d.groups.length?`    groups: [${d.groups.map(g=>`{ name: ${g.name} }`).join(", ")}]\n`:""}`:"";
   return {lang:"yaml",title:"deck gateway sync kong.yaml",text:`# deck gateway sync kong.yaml ${s.deploy==="konnect"?"--konnect-control-plane-name acme-apis":"\n# needs a database-backed control plane: DB-less nodes take the same file with POST /config"}
-_format_version: "3.0"
+${metaNote}_format_version: "3.0"
 ${cg.length?`consumer_groups:\n${cg.join("\n")}\n`:""}${consumers}services:
   - name: ${d.tgt.name}
     url: http://orders.internal:8080
@@ -874,7 +875,8 @@ const API_TAGS=[
   [/^# API, linked to the control plane/, "tf:konnect_api, konnect_api_implementation"],
   [/^# Publish to the portal/, "tf:konnect_api_publication"],
   [/^# API package /, "console"],
-  [/^# Per-application plan/, "read"]];
+  [/^# Per-application plan/, "read"],
+  [/^# Usage plans read from principal metadata/, "tf:konnect_gateway_plugin_rate_limiting_advanced, konnect_gateway_plugin_rate_limiting"]];
 function tagApiBlock(b){
   const m=API_TAGS.find(([re])=>re.test(b)); if(!m) return b;
   const line=m[1]==="api"?"# ↳ API only: no decK, kongctl or Terraform resource":m[1]==="read"?"# ↳ lookup: read-only"
@@ -924,9 +926,13 @@ AS=$(curl -s -X POST $KONNECT_API/v1/auth-servers -H "$H" -H 'content-type: appl
   -d '{"name":"acme","audience":"kong-gateway"}' | jq -r .id)
 SCOPE=$(curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/scopes -H "$H" -H 'content-type: application/json' \\
   -d '{"name":"${d.aiAny?"llm.invoke":"orders.read"}","enabled":true}' | jq -r .id)
-curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/clients -H "$H" -H 'content-type: application/json' \\
+CLIENT=$(curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/clients -H "$H" -H 'content-type: application/json' \\
   -d '{"name":"${d.who.name}","grant_types":["client_credentials"],"response_types":["token"],
-       "allow_scopes":["'$SCOPE'"],"labels":{"app":"${d.who.name}"${s.target==="a2a"?',"skills":"search_flights.get_booking"':""}}}'   # client_secret returned once`);
+       "allow_scopes":["'$SCOPE'"],"labels":{"app":"${d.who.name}"${s.target==="a2a"?',"skills":"search_flights.get_booking"':""}}}')
+CLIENT_ID=$(echo "$CLIENT" | jq -r .id)
+echo "client_id=$CLIENT_ID client_secret=$(echo "$CLIENT" | jq -r .client_secret)   # the secret is shown once: store it"
+ISSUER=$(curl -s $KONNECT_API/v1/auth-servers/$AS -H "$H" | jq -r .issuer)
+echo "issuer=$ISSUER   # use it as the openid-connect issuer (append /.well-known/openid-configuration)"`);
     if(s.target==="a2a") out.push(`# Claim templated from the client label (renders a JSON array)
 curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/claims -H "$H" -H 'content-type: application/json' \\
   -d '{"name":"allowed_skills","value":"\${ .Client.Labels.skills | default \\"\\" | splitList \\".\\" | toJson }",
@@ -949,12 +955,24 @@ P=$(curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals -H "$H" -H 'cont
 curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/api-keys -H "$H" -H 'content-type: application/json' -d '{"type":"v1"}'`);
     else if(s.idp==="ki") out.push(`# Link the Kong Identity client to the principal
 curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/identities -H "$H" -H 'content-type: application/json' \\
-  -d '{"type":"auth_server_client","auth_server_id":"'$AS'","client_id":"<client_id>"}'`);
+  -d '{"type":"auth_server_client","auth_server_id":"'$AS'","client_id":"'$CLIENT_ID'"}'`);
     else out.push(`# Link the ${d.idp.label} identity to the principal (issuer + claim)
 curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/identities -H "$H" -H 'content-type: application/json' \\
   -d '{"type":"oidc","issuer":"${d.idp.issuer}","claim":{"name":"${d.credClaim}","value":"${s.caller==="employees"?d.who.name:"<client_id>"}"}}'`);
     if(d.groups.length && d.ai) out.push(`# consumer_groups metadata takes AI Gateway group UUIDs (or names)
 curl -s "$KONNECT_API/v1/ai-gateways/$AIGW/consumer-groups" -H "$H" | jq -r '.data[] | "\\(.name) \\(.id)"'`);
+  }
+  const mp=(d.plans||[]).filter(p=>p==="tier-meta"||p==="bu-meta");
+  if(!d.aiAny && mp.length){
+    const rows=[];
+    if(mp.includes("tier-meta")) rows.push(`curl -s -X POST $KONNECT_API/v2/control-planes/$CP/core-entities/plugins -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"rate-limiting-advanced","service":{"id":"'$SVC'"},"config":{"identifier":"principal","limit":[10],"window_size":[5],"window_type":"fixed"},"expressions":{"limit":["principal.metadata.rl_per_5s"]}}'`);
+    if(mp.includes("bu-meta")) rows.push(`curl -s -X POST $KONNECT_API/v2/control-planes/$CP/core-entities/plugins -H "$H" -H 'content-type: application/json' \\
+  -d '{"name":"rate-limiting","config":{"minute":60,"limit_by":"principal","policy":"local"},"expressions":{"minute":"principal.metadata.bu_rl_minute"}}'`);
+    out.push(`# Usage plans read from principal metadata (plugin expressions: decK can't sync them yet, Kong/deck#2284). Run after decK.
+CP=$(curl -s "$KONNECT_API/v2/control-planes?filter%5Bname%5D%5Beq%5D=acme-apis" -H "$H" | jq -r '.data[0].id')
+SVC=$(curl -s $KONNECT_API/v2/control-planes/$CP/core-entities/services/${d.tgt.name} -H "$H" | jq -r .id)
+${rows.join("\n")}`);
   }
   if(s.caller==="agents" && d.pr && s.deploy==="konnect") out.push(`# Register the calling agent in Konnect Catalog (beta) and link its principal
 A=$(curl -s -X POST "$KONNECT_API/v1/agents?create_version=false" -H "$H" -H 'content-type: application/json' \\
@@ -1211,13 +1229,66 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
   consumer_group   = { id = konnect_gateway_consumer_group.bu_${d.who.bu}.id }
   config           = { minute = 200, limit_by = "${d.pr&&gw316(s)?"principal":"credential"}", policy = "local" }
 }`);
-    if(d.plans.includes("tier-meta")||d.plans.includes("bu-meta")) t.push(`# Plugin "expressions" (limits read from principal metadata) are 3.16 features:
-# check that your provider version exposes them, or manage those two plugins with decK.`);
+    if(d.plans.includes("tier-meta")) t.push(`resource "konnect_gateway_plugin_rate_limiting_advanced" "api_plan" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  service          = { id = "<${d.tgt.name} service id>" }
+  config           = { identifier = "principal", limit = [10], window_size = [5], window_type = "fixed" }
+  expressions      = { limit = ["principal.metadata.rl_per_5s"] }   # 3.16: limit read from principal metadata
+}`);
+    if(d.plans.includes("bu-meta")) t.push(`resource "konnect_gateway_plugin_rate_limiting" "bu_plan" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  config           = { minute = 60, limit_by = "principal", policy = "local" }
+  expressions      = { minute = "principal.metadata.bu_rl_minute" }
+}`);
   }
   return {lang:"hcl",title:"Terraform",text:t.join("\n\n")};
 }
 
 /* Output tabs: Terraform targets Konnect only; the Konnect API tab only shows when there is something to call. */
+/* ---------- syntax highlighting (no external libraries: the CSP allows none) ----------
+   Wraps tokens in spans and never changes the text: the Copy button and the tests read textContent. */
+const HL_RULES={
+  yaml:[["c",/#.*/y,"ws"],["s",/"(?:[^"\\\n]|\\.)*"|'(?:[^'\n]|'')*'/y],["k",/[A-Za-z_][\w.\-]*(?=:(?:\s|$))/y,"word"],
+        ["n",/(?:true|false|null)\b|-?\d+(?:\.\d+)?\b/y,"word"],["p",/<[^<>\n]+>/y]],
+  hcl:[["c",/#.*|\/\/.*/y],["s",/"(?:[^"\\\n]|\\.)*"/y],["w",/(?:resource|data|terraform|provider|variable|output|locals|module|required_providers)\b/y,"word"],
+       ["k",/[A-Za-z_][\w\-]*(?=\s*=[^=])/y,"word"],["n",/(?:true|false|null)\b|-?\d+(?:\.\d+)?\b/y,"word"]],
+  bash:[["c",/#.*/y,"ws"],["s",/'[^'\n]*'|"(?:[^"\\\n]|\\.)*"/y],["v",/\$\{?[A-Za-z_]\w*\}?|\$\(/y],
+        ["w",/(?:curl|jq|export|echo|if|then|else|fi|for|do|done|cat|head)\b/y,"word"],["f",/--?[A-Za-z][\w-]*/y,"ws"],["p",/<[^<>\n]+>/y]]};
+function highlight(text,lang){
+  const rules=HL_RULES[lang]; const e=x=>x.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  if(!rules) return e(text);
+  return text.split("\n").map(line=>{
+    let out="",i=0;
+    while(i<line.length){
+      const prev=i?line[i-1]:" "; let hit=null;
+      for(const [cls,re,guard] of rules){
+        if(guard==="ws"&&!/\s/.test(prev)) continue;
+        if(guard==="word"&&/[\w.\-$]/.test(prev)) continue;
+        re.lastIndex=i; const m=re.exec(line); if(m&&m[0].length){hit=[cls==="f"?"v":cls,m[0]];break}
+      }
+      if(hit){out+=`<span class="${hit[0]}">${e(hit[1])}</span>`;i+=hit[1].length}
+      else{out+=e(line[i]);i++}
+    }
+    return out;
+  }).join("\n");
+}
+/* ---------- end-to-end results ----------
+   The server injects the recorded runs (e2e/results/*.json) keyed by scenario payload. A run counts for the page only
+   while the generated files it applied are unchanged: each result stores outputHash() of the tabs it ran. */
+const E2E_RESULTS = {};
+function outputHash(text){ // cyrb53: small, deterministic, same in the browser, the server and the runners
+  let h1=0xdeadbeef, h2=0x41c6ce57;
+  for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}
+  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);
+  h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+  return (4294967296*(2097151&h2)+(h1>>>0)).toString(16).padStart(14,"0");
+}
+/** The recorded run for these answers, and whether it applied the files this version generates. */
+function e2eStatus(s,cfg){
+  const r=E2E_RESULTS[scenarioPayload(s)]; if(!r) return null;
+  const current=Object.entries(r.hashes||{}).every(([tab,h])=>cfg[tab]&&outputHash(cfg[tab].text)===h);
+  return {...r, current};
+}
 /** "How to apply": which tabs are required, which are alternatives, in which order. Pure; tested. */
 function applyPlan(s,d,cfg,tabs){
   const has=t=>tabs.includes(t), api=cfg.api.text, steps=[];
@@ -1233,8 +1304,10 @@ function applyPlan(s,d,cfg,tabs){
       note:[!has("tf")&&tfAlt?"The kong/konnect Terraform provider can also create the blocks marked \"or Terraform\".":"",
             /Catalog → API packages/.test(api)?"API packages are configured in the console (Catalog → API packages).":""].filter(Boolean).join(" ")});
   }
-  const gw=[{tab:"decl",role:has("tf")?"recommended":"required",text:"The complete gateway configuration."}];
-  if(has("tf")) gw.push({tab:"tf",role:"partial",text:d.ai?"Creates the gateway, auth strategies and groups; model, agent and MCP bodies stay in kongctl."
+  const split=/Kong\/deck#2284/.test(cfg.decl.text);
+  const gw=[{tab:"decl",role:split?"required":has("tf")?"recommended":"required",text:split?"Everything except the plans read from principal metadata.":"The complete gateway configuration."}];
+  if(split&&has("api")) gw.push({tab:"api",role:"required",join:"and",text:"The plans read from principal metadata (plugin expressions), after decK."});
+  if(has("tf")) gw.push({tab:"tf",role:"partial",text:split?"Can create those plans instead of the API calls.":d.ai?"Creates the gateway, auth strategies and groups; model, agent and MCP bodies stay in kongctl."
     :"A starting point for the same entities; not every plugin is written out."});
   steps.push({title:"Gateway configuration",items:gw,
     note:s.deploy==="self"?`${declName==="kongctl"?"":declName+" needs a database-backed control plane; DB-less nodes take the same file with POST /config."}`
@@ -1367,6 +1440,7 @@ function renderResult(){
   const CFG={decl:genDeclarative(S,d),api:genApi(S,d),tf:genTf(S,d)};
   const tabs=outputTabs(S,CFG);
   const PLAN=applyPlan(S,d,CFG,tabs);
+  const E2E=e2eStatus(S,CFG);
   const TABNAME={decl:d.ai?(S.deploy==="konnect"?"kongctl":"deck ai sync"):"decK",api:"Konnect API",tf:"Terraform"};
   const ROLE={required:"required",recommended:"recommended",choice:"either",partial:"partial"};
   if(!tabs.includes(tab)) tab="decl";
@@ -1379,7 +1453,10 @@ function renderResult(){
     ["Access",STEPS.find(s=>s.id==="access").options(S).find(o=>o.v===S.access)?.label||"–"],
     ["Plans",S.plans.map(v=>label(STEPS.find(s=>s.id==="plans"),v)).join(", ")]];
   r.innerHTML=`
-   <div class="res-head"><h2>Your identity workflow</h2><div class="res-tags">${lab?`<span class="badge ok">Core path validated in the lab · ${lab}</span>`:`<span class="badge draft">Generated draft · not lab-tested</span>`}
+   <div class="res-head"><h2>Your identity workflow</h2><div class="res-tags">${E2E&&E2E.current?`<a class="badge ${E2E.failed?"draft":"ok"}" href="#e2e">${E2E.failed?`End-to-end test: ${E2E.failed} of ${E2E.passed+E2E.failed} checks failed`:`Tested end to end · ${E2E.date.slice(0,10)} · ${E2E.passed}/${E2E.passed} checks`}</a>`
+       :E2E?`<a class="badge draft" href="#e2e">Tested with an earlier version of this output (${E2E.builder}, ${E2E.date.slice(0,10)})</a>`
+       :lab?`<span class="badge draft" title="The lab ran its own configuration for this identity flow; this generated file wasn't applied">Identity flow lab-tested · ${lab} · this file not applied</span>`
+       :`<span class="badge draft">Generated draft · not tested end to end</span>`}
      <span class="share"><code id="sid" title="Scenario ID: the answers plus the version that generated this page">${scenarioId(S)}</code><button class="btn" id="bshare">Copy link</button></span></div></div>
    <div class="stage">
      <div class="panel"><div class="diagram" id="diagram"></div>
@@ -1393,8 +1470,12 @@ function renderResult(){
        ${d.pr&&Object.keys(d.meta).length?`<h3>Principal metadata</h3><pre class="code">${esc(JSON.stringify(d.meta,null,2))}</pre>`:""}</div>
      <div class="panel"><h3>Analytics</h3>${d.an.length?`<div class="tablebox"><table><thead><tr><th>Tool</th><th>Where</th><th>Dimensions</th></tr></thead><tbody>${d.an.map(a=>`<tr><td>${a.tool}</td><td>${esc(a.where)}</td><td>${esc(a.dims)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">No analytics selected.</p>`}</div>
      <div class="panel full"><h3>Watch out</h3><ul class="plain warns">${[...d.warns,...d.notes].map(w=>`<li><span>${esc(w)}</span></li>`).join("")||"<li><span>Nothing specific.</span></li>"}</ul></div>
+     ${E2E?`<div class="panel full" id="e2e"><h3>End-to-end test</h3>
+       <p class="muted" style="margin:0">${E2E.current?"These generated files were applied and checked":"An earlier version of these files was applied and checked"} on ${esc(E2E.date.slice(0,10))} with builder ${esc(E2E.builder)}: ${esc(E2E.environment)}. The generated file was ${E2E.raw_generated_file==="accepted"?"accepted as generated":"rejected as generated"}; changes made to run it:</p>
+       <ul class="plain">${E2E.changes.map(c=>`<li><span><b>${esc(c.kind)}</b> · ${esc(c.what)}</span></li>`).join("")}</ul>
+       <div class="tablebox"><table><thead><tr><th>Step</th><th>Check</th><th>Expected</th><th>Got</th><th></th></tr></thead><tbody>${E2E.checks.map(c=>`<tr><td>${esc(c.step)}</td><td>${esc(c.check)}</td><td><code>${esc(c.expected)}</code></td><td><code>${esc(c.actual)}</code></td><td>${c.pass?"✓":"✗"}</td></tr>`).join("")}</tbody></table></div></div>`:""}
    </div>
-   <div class="panel"><div class="howto" id="howto"><h3>How to apply</h3><ol>${PLAN.map(st=>`<li class="step"><b>${esc(st.title)}</b>${st.items.map((it,i)=>`${i?`<span class="or">${it.role==="choice"||it.role==="partial"?"or":"and"}</span>`:""}<span class="it"><button class="tablink" data-goto="${it.tab}">${esc(TABNAME[it.tab])}</button><span class="role ${it.role}">${ROLE[it.role]}</span><span>${esc(it.text)}</span></span>`).join("")}${st.note?`<div class="note">${esc(st.note)}</div>`:""}</li>`).join("")}</ol></div>
+   <div class="panel"><div class="howto" id="howto"><h3>How to apply</h3><ol>${PLAN.map(st=>`<li class="step"><b>${esc(st.title)}</b>${st.items.map((it,i)=>`${i?`<span class="or">${it.join||(it.role==="choice"||it.role==="partial"?"or":"and")}</span>`:""}<span class="it"><button class="tablink" data-goto="${it.tab}">${esc(TABNAME[it.tab])}</button><span class="role ${it.role}">${ROLE[it.role]}</span><span>${esc(it.text)}</span></span>`).join("")}${st.note?`<div class="note">${esc(st.note)}</div>`:""}</li>`).join("")}</ol></div>
      <div class="tabs" role="tablist">
        <button role="tab" data-t="decl">${d.ai?(S.deploy==="konnect"?"kongctl":"deck ai sync"):"decK"}</button>
        ${tabs.includes("api")?`<button role="tab" data-t="api">Konnect API</button>`:""}${tabs.includes("tf")?`<button role="tab" data-t="tf">Terraform</button>`:""}</div>
@@ -1403,7 +1484,7 @@ function renderResult(){
   document.getElementById("bp").onclick=()=>playing?stop():play();
   document.getElementById("bprev").onclick=()=>{stop();moveTo(step-1,true)};
   document.getElementById("bnext").onclick=()=>{stop();moveTo(step+1,true)};
-  const showTab=t=>{tab=t;r.querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));document.getElementById("code").textContent=CFG[t].text};
+  const showTab=t=>{tab=t;r.querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.t===t)));document.getElementById("code").innerHTML=highlight(CFG[t].text,CFG[t].lang)};
   r.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>showTab(b.dataset.t)); showTab(tab);
   r.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{showTab(b.dataset.goto);document.getElementById("code").scrollIntoView({block:"nearest"})});
   const req=new Set(PLAN.flatMap(st=>st.items.filter(i=>i.role==="required").map(i=>i.tab)));

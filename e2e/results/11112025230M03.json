@@ -1,0 +1,134 @@
+{
+  "id": "v1.4.2-11112025230M03Y",
+  "payload": "11112025230M03",
+  "date": "2026-10-11T20:08:51Z",
+  "builder": "v1.5.0",
+  "environment": "Konnect control plane and Kong Identity auth server created for the run, Kong Gateway 3.16 data plane on kind; echo upstream",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "0cfb6aee71368a",
+    "api": "1f3baffae66396"
+  },
+  "passed": 12,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "env",
+      "what": "Konnect control plane created for the run (the generated decK file targets an existing one)"
+    },
+    {
+      "kind": "env",
+      "what": "API script: auth server and principal names made unique; ids and issuer exported for the next steps"
+    },
+    {
+      "kind": "env",
+      "what": "API script, usage plans: control plane name made unique"
+    },
+    {
+      "kind": "substitution",
+      "what": "service orders-api url http://orders.internal:8080 → lab echo upstream"
+    },
+    {
+      "kind": "substitution",
+      "what": "openid-connect issuer https://<sub>.us.identity.konghq.com/auth/.well-known/openid-configuration → issuer of the Kong Identity auth server created by the generated API script"
+    },
+    {
+      "kind": "fixture",
+      "what": "principal nosub: same metadata without subscriptions"
+    },
+    {
+      "kind": "fixture",
+      "what": "principal tight: same metadata with rl_per_5s 3 and bu_rl_minute 5"
+    },
+    {
+      "kind": "fixture",
+      "what": "client orphan: no principal"
+    }
+  ],
+  "checks": [
+    {
+      "step": "1-2",
+      "check": "Kong Identity issues a client-credentials token (aud kong-gateway)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "no token → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "4",
+      "check": "Keycloak token (other issuer) → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "5-6",
+      "check": "client without a principal (error_on_miss) → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "5-6",
+      "check": "app → orders-api (principal metadata lists the subscription)",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "8",
+      "check": "principal without subscriptions in its metadata → 403 (acl allow_when)",
+      "expected": "403",
+      "actual": "403",
+      "pass": true
+    },
+    {
+      "step": "9",
+      "check": "API plan limit read from principal metadata (rl_per_5s)",
+      "expected": "100",
+      "actual": "100",
+      "pass": true
+    },
+    {
+      "step": "9",
+      "check": "another principal gets its own limit from its metadata",
+      "expected": "3",
+      "actual": "3",
+      "pass": true
+    },
+    {
+      "step": "9",
+      "check": "5 calls in 5 s with rl_per_5s 3 → 429s",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "10",
+      "check": "BU plan read from principal metadata (bu_rl_minute)",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "10",
+      "check": "tight principal's BU plan (bu_rl_minute 5)",
+      "expected": "5",
+      "actual": "5",
+      "pass": true
+    },
+    {
+      "step": "11-12",
+      "check": "response comes from the upstream (echo)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    }
+  ]
+}

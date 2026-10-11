@@ -98,6 +98,18 @@ test("kongctl AI Gateway files match the kongctl schema", { skip: !KONNECT && "K
   report("kongctl schema");
 });
 
+test("plugins created through the Konnect API tab match the Kong plugin schemas", () => {
+  for (const s of CLASSES.filter(c => c.product === "api")) {
+    const text = render(X, s).cfg.api.text;
+    for (const m of text.matchAll(/core-entities\/plugins[^\n]*\n\s*-d '((?:[^']|'\$[A-Z_]+')*)'/g)) {
+      const p = JSON.parse(m[1].replace(/'\$[A-Z_]+'/g, "X"));
+      delete p.service; // FK by id
+      for (const e of checkPlugin(p, target(s), "api-tab")) fail(s, e);
+    }
+  }
+  report("API-tab plugin schema");
+});
+
 test("API calls carry valid JSON bodies", () => {
   for (const s of CLASSES) {
     const text = render(X, s).cfg.api.text;
@@ -120,4 +132,18 @@ test("Terraform uses existing konnect resources and balanced braces", { skip: !K
     }
   }
   report("Terraform");
+});
+
+test("syntax highlighting never changes the text, and colours each language", () => {
+  const unhtml = h => h.replace(/<\/?span[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const coloured = {};
+  for (const s of CLASSES) for (const o of Object.values(render(X, s).cfg)) {
+    const h = X.highlight(o.text, o.lang);
+    if (unhtml(h) !== o.text) { fail(s, `${o.lang} highlight changes the text`); continue; }
+    if (/<(?!\/?span[ >])/.test(h.replace(/&lt;/g, ""))) fail(s, `${o.lang} highlight emits unescaped markup`);
+    for (const c of h.matchAll(/class="(\w)"/g)) (coloured[o.lang] ??= new Set()).add(c[1]);
+  }
+  report("highlight");
+  for (const [lang, want] of [["yaml", "kcs"], ["hcl", "wks"], ["bash", "csv"]])
+    for (const c of want) assert.ok(coloured[lang]?.has(c), `${lang} gets class ${c}`);
 });

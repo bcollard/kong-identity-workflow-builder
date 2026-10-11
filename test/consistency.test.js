@@ -34,6 +34,10 @@ function kongctlPluginNames(gw) {
   if (acl) names.add("acl");
   return names;
 }
+/** Plugins the Konnect API tab creates on the control plane (bodies of POST …/core-entities/plugins). */
+function apiPlugins(text) {
+  return [...text.matchAll(/core-entities\/plugins[^\n]*\n\s*-d '((?:[^']|'\$[A-Z_]+')*)'/g)].map(m => JSON.parse(m[1].replace(/'\$[A-Z_]+'/g, "X")));
+}
 const LANE_PLUGIN = { "ai-rate-limit-adv": "ai-rate-limiting-advanced", "rate-limiting-adv": "rate-limiting-advanced", "ai-proxy-adv": "ai-proxy-advanced" };
 
 const parsed = new Map();
@@ -102,6 +106,7 @@ test("sequence diagram is well formed and its plugin lanes match the config", ()
     if (seq.steps.at(-1).t !== "c") fail(s, "last step doesn't return to the caller");
     if (!seq.steps.some(st => st.f === "c")) fail(s, "the caller never sends anything");
     const plugins = gw ? kongctlPluginNames(gw) : deckPluginNames(doc);
+    for (const p of apiPlugins(parsed.get(label(s)).cfg.api.text)) plugins.add(p.name); // applied by the Konnect API tab
     for (const l of seq.lanes.filter(l => l.kind === "plugin")) {
       const name = LANE_PLUGIN[l.label] || l.label;
       if (!plugins.has(name)) fail(s, `lane "${l.label}" has no matching plugin in the config [${[...plugins]}]`);

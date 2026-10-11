@@ -28,6 +28,22 @@ answers encoded with permanent codes, then a check character. The address bar al
 - `GET /identity-paths/api/scenarios/<id>` returns the decoded answers and whether the running version supports them.
 - Step and option codes are append-only (`CODES` in `site/index.html`); a test compares them with the last release tag.
 
+## End-to-end results
+
+`e2e/results/<payload>.json` records scenarios whose generated files were applied to a running gateway and checked step
+by step: the date, the builder version, every substitution needed to run (with its kind: `env`, `substitution`,
+`fixture`, `generator-gap`), every check, and a hash of each tab that was applied. The server injects them into the page.
+
+| Badge | Meaning |
+|---|---|
+| Tested end to end · date · n/n checks | These exact files ran (the hashes match what this version generates) |
+| Tested with an earlier version of this output | The scenario ran, but the generator has changed since: re-run it |
+| Identity flow lab-tested · this file not applied | The lab ran its own configuration for this identity flow |
+| Generated draft | Not run |
+
+The runners live outside this repo (they drive a private lab: kind clusters, Konnect, Keycloak, mock upstreams);
+only their public-safe results are committed here.
+
 ## Develop
 
 `site/index.html` is plain HTML, CSS and JavaScript; `server/server.js` serves it under `/identity-paths/` (no dependencies).

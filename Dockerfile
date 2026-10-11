@@ -7,6 +7,7 @@ WORKDIR /app
 COPY package.json ./
 COPY server ./server
 COPY site ./site
+COPY e2e/results ./e2e/results
 USER node
 EXPOSE 8080
 CMD ["node", "server/server.js"]

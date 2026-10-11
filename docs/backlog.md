@@ -14,12 +14,13 @@
 
 ## End-to-end runs from a scenario ID
 
-Given an ID: `node tools/scenario.js <id> --out dir` gives the answers and files. Next steps:
+Runners exist for AI Gateway 2.x on Konnect (Keycloak employees, Kong Identity apps), API Gateway self-managed (API keys
+on Consumers) and API Gateway on Konnect (Kong Identity apps with principals). Results: `e2e/results/`. Next:
 
-- Self-managed: marina cluster with the scenario's Kong version, `deck gateway sync` / `deck ai sync` of `dir/decl.yaml`,
-  Keycloak standing in for Okta / Entra / AD FS (same claim names), mock upstreams, then one request per sequence step.
-- Konnect: reuse the lab helpers (control plane, Kong Identity, principals) with the same request checks.
-- Bulk: `deck gateway validate --online` on every runtime class against local 3.15 / 3.16 / AI Gateway 2.2 control planes.
+- Konnect Analytics attribution (by principal, consumer group, BU) isn't checked yet.
+- Runners for AI Gateway 1.x, A2A agents and MCP servers, Dev Portal applications, Okta/Entra/AD FS claim shapes
+  (Keycloak standing in), and self-managed AI Gateway 2.x (`deck ai sync`).
+- Bulk: `deck gateway validate --online` on every runtime class.
 
 ## Wizard variables not covered yet
 
