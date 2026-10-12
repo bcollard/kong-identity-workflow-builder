@@ -53,7 +53,7 @@ jobs:
         run: |
           V="${GITHUB_REF_NAME#v}"
           gcloud run deploy "$SERVICE" --image "$IMAGE:$V" --region "$REGION" --project "$PROJECT" \
-            --update-env-vars "APP_VERSION=$V" --quiet
+            --update-env-vars "APP_VERSION=$V" --max 2 --cpu-boost --quiet
       - name: Smoke test
         run: |
           V="${GITHUB_REF_NAME#v}"
