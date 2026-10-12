@@ -93,6 +93,17 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 
 ## AI Gateway 1.x (Kong Gateway + AI plugins)
 
+- Limiting MCP traffic (`lab-verified` on 3.16.0.0, ai-mcp-proxy passthrough-listener):
+  - `rate-limiting-advanced` on the MCP route counts every MCP message (initialize, tools/list, notifications,
+    tools/call), per caller with `identifier: credential` / `consumer` / `principal`. Works on AI Gateway 2.x too
+    (policy scope `mcp-servers`).
+  - `ai-rate-limiting-advanced` `policies` mode only counts LLM tokens or cost: it never limits MCP calls.
+  - A tool-call-only budget works with the deprecated `llm_providers: [{name: requestPrompt}]` mode and a
+    `request_prompt_count_function` that returns 1 for `tools/call` and 0 otherwise. The mode is deprecated (removed
+    after 4.0) and absent from the AI Gateway 2.x plugin.
+  - Plugin order on the route: openid-connect (1050) → rate-limiting-advanced (910) → ai-rate-limiting-advanced (905)
+    → ai-mcp-proxy (820).
+
 AI plugins configured as ordinary plugins on services and routes (decK, Admin API, Konnect control planes, KIC).
 
 | Topic | AI Gateway 1.x (Gateway 3.15 / 3.16) | AI Gateway 2.x (2.2) |

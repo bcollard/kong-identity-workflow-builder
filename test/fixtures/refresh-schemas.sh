@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 PLUGINS_GW="openid-connect key-auth acl rate-limiting rate-limiting-advanced http-log prometheus opentelemetry post-function ace
 ai-proxy-advanced ai-rate-limiting-advanced ai-a2a-proxy ai-mcp-proxy ai-mcp-oauth2"
 PLUGINS_AIGW="openid-connect key-auth acl ai-rate-limiting-advanced ai-proxy-advanced ai-a2a-proxy ai-mcp-proxy post-function prometheus opentelemetry
-ai-model-selector ai-mcp-oauth2 request-termination"   # last line: plugins ai-deck-converter adds when lowering deck ai sync files
+ai-model-selector ai-mcp-oauth2 request-termination rate-limiting-advanced"   # last line: plugins ai-deck-converter adds when lowering deck ai sync files
 
 dump() { # name image plugins...   (ONLY=<name> refreshes a single target)
   local name="$1" image="$2"; shift 2

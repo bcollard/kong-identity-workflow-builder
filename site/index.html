@@ -240,6 +240,8 @@ const isAI1 = s=>s.product==="ai1";          // AI Gateway 1.x: Kong Gateway + A
 const isAIany = s=>isAI(s)||isAI1(s);
 const gw316 = s=>s.version!=="3.15";
 const oidcLike = s=>s.cred==="oidc"||s.cred==="cc";
+/** rate-limiting-advanced identifier for a per-caller limit: the Consumer, the 3.16 principal, or the (virtual) credential. */
+const hitIdentifier = s=>s.record==="consumers"?"consumer":(s.record==="principals"&&!isAI(s)&&gw316(s))?"principal":"credential";
 
 const STEPS = [
  {id:"product",title:"Product",ask:"Which gateway receives the calls?",options:s=>[
@@ -307,7 +309,9 @@ const STEPS = [
    if(ai1) return [
      {v:"none",label:"No plan",s:"Only access control."},
      {v:"llm",label:"LLM token budget per tier",s:"ai-rate-limiting-advanced on each tier-CG with identifier: credential. Policy mode has no credential matcher on 3.15/3.16, so this uses the deprecated llm_providers mode.",tag:"cg",tagText:"tier-CG",
-      disabled:s.target!=="models"?"Token budgets apply to LLM routes. Use rate-limiting-advanced on agent or MCP routes.":null}];
+      disabled:s.target!=="models"?"Token budgets apply to LLM routes. Use rate-limiting-advanced on agent or MCP routes.":null},
+     {v:"mcp-hits",label:"Hit limit on the MCP path",s:"rate-limiting-advanced per caller on the MCP route. It counts every MCP message (initialize, tools/list, notifications, tools/call), so size the limit for whole sessions.",tag:"nocg",tagText:"No CG",
+      disabled:s.target!=="mcp"?"MCP servers only.":null}];
    if(s.caller==="portal") return [
      {v:"none",label:"No plan",s:"Only portal access control."},
      {v:"pkg",label:"API package rate limits",s:"Set on the package and per operation in Catalog. ACE enforces them, cumulatively across the package.",tag:"nocg",tagText:"No CG"},
@@ -315,7 +319,9 @@ const STEPS = [
    if(ai) return [
      {v:"none",label:"No plan",s:"Only access control."},
      {v:"llm",label:"LLM token budget per tier",s:"Global ai-rate-limiting-advanced, rules per tier-CG, one counter per caller credential.",tag:"cg",tagText:"tier-CG",
-      disabled:s.target!=="models"?"AI rate limiting isn't available on agents or MCP servers in 2.2.":null}];
+      disabled:s.target!=="models"?"AI rate limiting isn't available on agents or MCP servers in 2.2.":null},
+     {v:"mcp-hits",label:"Hit limit on the MCP path",s:"rate-limiting-advanced per caller on the MCP route. It counts every MCP message (initialize, tools/list, notifications, tools/call), so size the limit for whole sessions.",tag:"nocg",tagText:"No CG",
+      disabled:s.target!=="mcp"?"MCP servers only.":null}];
    return [
      {v:"none",label:"No plan",s:"Only access control."},
      {v:"tier-cg",label:"Per-API plan · tier-CG",s:"rate-limiting-advanced on a tier-CG, e.g. 100 calls / 5 s per caller. The API owner owns the group.",tag:"cg",tagText:"tier-CG"},
@@ -540,6 +546,7 @@ function buildSeq(s,d){
   if(s.access&&s.access!=="none"&&!mcpToolAcl) lanes.push(L("acl","acl",s.access==="meta"?"allow_when":s.access==="claimacl"?"groups claim":"sub-CG","plugin"));
   const rl=[];
   if(d.plans.includes("llm")) rl.push(L("rla","ai-rate-limit-adv","token budget","plugin"));
+  if(d.plans.includes("mcp-hits")) rl.push(L("rlh","rate-limiting-adv","MCP hits","plugin"));
   if(d.plans.includes("tier-cg")||d.plans.includes("tier-meta")) rl.push(L("rla","rate-limiting-adv","API plan","plugin"));
   if(d.plans.includes("bu-cg")||d.plans.includes("bu-meta")) rl.push(L("rl","rate-limiting","BU plan","plugin"));
   lanes.push(...rl);
@@ -570,6 +577,7 @@ function buildSeq(s,d){
     steps.push({f:prev,t:"acl",l:`${why} ✓`,h:"Subscription check",p:"A caller without the subscription gets a 403 here.",set:{decision:"acl: allowed"}}); prev="acl";
   }
   for(const r of rl){
+    if(r.sub==="MCP hits"){ steps.push({f:prev,t:r.id,l:`${hitIdentifier(s)} · 100 hits / min`,h:"Hit limit on the MCP path",p:"rate-limiting-advanced counts every MCP message on this route, per caller. Over the limit returns 429.",set:{decision:"rate-limiting-advanced: within limit"}}); prev=r.id; continue; }
     const txt = r.sub==="token budget"?(d.ai1?"CG ai-tier-standard · identifier credential":"tier rule · partition by credential"):r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
     steps.push({f:prev,t:r.id,l:txt,h:r.sub==="token budget"?"LLM token budget":r.sub==="API plan"?"API usage plan (API owner)":"BU-wide plan (org admin)",p:r.sub==="token budget"?(d.ai1?"ai-rate-limiting-advanced scoped to the tier group, one counter per credential (llm_providers mode).":"One global policy; its rules match tier groups, so a caller in several groups never conflicts."):"Over the limit returns 429.",set:{decision:"acl: allowed\n"+r.label+": within limit"}}); prev=r.id;
   }
@@ -682,7 +690,9 @@ ${auth}
       - name: ai-mcp-proxy
         config:
           mode: passthrough-listener
-${s.access==="claimacl"?`          acl_attribute_type: oauth_access_token\n          access_token_claim_field: .${d.idp.groups}\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:s.access==="subcg"?`          include_consumer_groups: true\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:"          # no tool ACLs"}`;
+${s.access==="claimacl"?`          acl_attribute_type: oauth_access_token\n          access_token_claim_field: .${d.idp.groups}\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:s.access==="subcg"?`          include_consumer_groups: true\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:"          # no tool ACLs"}${d.plans.includes("mcp-hits")?`
+      - name: rate-limiting-advanced         # AI team · hit limit on the MCP path, per caller
+        config: { identifier: ${hitIdentifier(s)}, limit: [100], window_size: [60], window_type: fixed, strategy: local, namespace: mcp-${d.tgt.name} }`:""}`;
   const glob=[];
   if(A.includes("prom")) glob.push(`  - name: prometheus\n    config: { ai_metrics: true, status_code_metrics: true }`);
   if(A.includes("otel")) glob.push(`  - name: opentelemetry\n    config:\n      metrics: { endpoint: http://otel-collector:4318/v1/metrics, enable_ai_metrics: true, enable_request_metrics: true${d.pr&&gw316(s)?", enable_principal_attribute: true":""} }`);
@@ -746,6 +756,11 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
     config:
       header_filter: ['kong.response.clear_header("Content-Length")']
       body_filter: ['<trim-agent-card.lua>']`);
+    if(d.plans.includes("mcp-hits")) pol.push(`  - ref: mcp-hit-limit            # AI team · hit limit on the MCP path, per caller
+    name: mcp-hit-limit
+    display_name: MCP hit limit
+    type: rate-limiting-advanced
+    config: { identifier: ${hitIdentifier(s)}, limit: [100], window_size: [60], window_type: fixed, strategy: local, namespace: mcp-${d.tgt.name} }`);
     if((s.analytics||[]).includes("prom")) pol.push(`  - ref: metrics\n    name: metrics\n    display_name: Metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
     const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`:"";
     const stratName = d.auth.plugin==="openid-connect"?`${s.caller}-auth`:`${s.caller}-keys`;
@@ -779,7 +794,8 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
           acl_attribute_type: ${s.access==="claimacl"?"oauth_access_token":"consumer"}${s.access==="subcg"?`
           acls: { allow: [${d.tgt.sub}] }`:""}${s.access==="claimacl"?`
           access_token_claim_field: .${d.idp.groups}
-          default_tool_acls: { allow: [${d.tgt.name}-users] }`:""}`;
+          default_tool_acls: { allow: [${d.tgt.name}-users] }`:""}${d.plans.includes("mcp-hits")?`
+        policies: [mcp-hit-limit]`:""}`;
     if(s.deploy==="self"){
       // deck ai sync reads the flat AI Gateway entity model (ai-deck-converter input): no ai_gateways wrapper, no refs,
       // group membership listed on the consumer, providers declared as model_providers.
@@ -1127,6 +1143,11 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
   route            = ${route}
   config           = { mode = "passthrough-listener" }
 }`);
+    if(d.plans.includes("mcp-hits")) t.push(`resource "konnect_gateway_plugin_rate_limiting_advanced" "mcp_hits" {
+  control_plane_id = konnect_gateway_control_plane.acme.id
+  route            = ${route}
+  config           = { identifier = "${hitIdentifier(s)}", limit = [100], window_size = [60], window_type = "fixed", strategy = "local", namespace = "mcp-${d.tgt.name}" }
+}`);
     if(d.plans.includes("llm")) t.push(`resource "konnect_gateway_plugin_ai_rate_limiting_advanced" "tier_standard" {
   control_plane_id = konnect_gateway_control_plane.acme.id
   consumer_group   = { id = konnect_gateway_consumer_group.ai_tier_standard.id }
@@ -1181,6 +1202,13 @@ ${d.pr?`      principals = { enabled = true, directory = "default", error_on_mis
     }]
   })
 }`);
+    if(d.plans.includes("mcp-hits")) t.push(`resource "konnect_ai_gateway_policy" "mcp_hit_limit" {
+  gateway_id   = konnect_ai_gateway.acme.id
+  name         = "mcp-hit-limit"
+  display_name = "MCP hit limit"
+  type         = "rate-limiting-advanced"
+  config = jsonencode({ identifier = "${hitIdentifier(s)}", limit = [100], window_size = [60], window_type = "fixed", strategy = "local", namespace = "mcp-${d.tgt.name}" })
+}   # attach it to the MCP server: policies = ["mcp-hit-limit"] (kongctl tab)`);
     const res = s.target==="models"?"konnect_ai_gateway_model":s.target==="a2a"?"konnect_ai_gateway_agent":"konnect_ai_gateway_mcp_server";
     t.push(`resource "${res}" "${d.tgt.name.replace(/-/g,"_")}" {
   gateway_id = konnect_ai_gateway.acme.id
@@ -1329,7 +1357,7 @@ const CODES = {
   caller:["employees","apps","agents","portal"], target:["models","a2a","mcp"], cred:["oidc","cc","apikey"],
   idp:["okta","entra","keycloak","adfs","ki"], record:["claims","principals","consumers","portalapp"],
   access:["none","subcg","meta","claimacl","portal"],
-  plans:["none","tier-cg","tier-meta","bu-cg","bu-meta","llm","pkg","app-cond"],
+  plans:["none","tier-cg","tier-meta","bu-cg","bu-meta","llm","pkg","app-cond","mcp-hits"],
   analytics:["konnect","bu","cost","agentan","prom","otel"]};
 const B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"; // Crockford base32
 const MULTI_STEPS = new Set(["plans","analytics"]);

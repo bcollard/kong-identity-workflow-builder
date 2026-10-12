@@ -1,0 +1,106 @@
+{
+  "id": "v1.6.0-1321131311801JK",
+  "payload": "1321131311801J",
+  "date": "2026-10-12T15:35:05Z",
+  "builder": "v1.6.0",
+  "environment": "Kong Gateway 3.16 with Postgres on kind, synced with decK; JSON-RPC MCP mock upstream; Keycloak employees; OpenTelemetry collector and Prometheus",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "18c26af93f4b71"
+  },
+  "passed": 11,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "substitution",
+      "what": "openid-connect issuer https://keycloak.example.com/realms/acme → lab Keycloak realm"
+    },
+    {
+      "kind": "substitution",
+      "what": "service url https://mcp.github.example/mcp → MCP mock (JSON-RPC over HTTP)"
+    },
+    {
+      "kind": "substitution",
+      "what": "opentelemetry endpoint http://otel-collector:4318 → lab collector"
+    }
+  ],
+  "checks": [
+    {
+      "step": "1-2",
+      "check": "Keycloak issues a token for alice (aud kong-gateway)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "no token → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "4-6",
+      "check": "alice: initialize",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "4-6",
+      "check": "alice: tools/list returns the server's tools",
+      "expected": "echo",
+      "actual": "echo",
+      "pass": true
+    },
+    {
+      "step": "4-6",
+      "check": "alice: tools/call reaches the MCP server",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "bob (no known group): any authenticated caller",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "hit limit applies to the MCP path (X-RateLimit-Limit-Minute)",
+      "expected": "100",
+      "actual": "100",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "alice: more than 100 MCP messages in a minute → 429s",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "bob has his own counter",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "analytics",
+      "check": "Prometheus plugin exports MCP route requests",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "analytics",
+      "check": "OpenTelemetry metrics from this gateway reach Prometheus",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    }
+  ]
+}
