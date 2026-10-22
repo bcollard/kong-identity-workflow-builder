@@ -3,8 +3,9 @@
 ## Test every combination
 
 - Walk each wizard path family in a lab and promote it to `labMatch()` when it passes. Priority order:
-  1. API Gateway with principals and no Consumer Groups (`access: meta`, `tier-meta`, `bu-meta`): ACL `allow_when` and
-     plugin `expressions` haven't been run yet.
+  1. AI Gateway 2.2 models and agents with principals and no Consumer Groups: `access.acls.allow_when` on
+     `principal.metadata`. Blocked on kongctl declaring `allow_when` (the Konnect API accepts it); enable `access: meta`
+     for AI models and agents once it does.
   2. Dev Portal applications (key-auth and DCR with Kong Identity), ACE with `if_present`, per-app `condition`.
   3. Okta, Entra ID and AD FS claim names (`sub` / `azp` / `appid`, `groups` / `roles` / `group`).
   4. AI Gateway MCP servers with token-claim tool ACLs.
@@ -26,7 +27,7 @@ on Consumers) and API Gateway on Konnect (Kong Identity apps with principals). R
 
 | Variable | Why it matters |
 |---|---|
-| Several caller populations on one AI model | One `openid-connect` strategy per model: the builder should generate one route per issuer |
+| Several caller populations on one AI model | One `openid-connect` strategy per model: generate `issuers_allowed` + `extra_jwks_uris` on it, with a claim unique across issuers, or a second model per issuer |
 | Token exchange / on-behalf-of (RFC 8693, actor token) | Agents acting for a user; `openid-connect` token exchange and `ai-mcp-oauth2` token exchange |
 | MCP OAuth (`ai-mcp-oauth2`) | MCP clients discovering the auth server through protected-resource metadata |
 | mTLS clients | Certificate-bound callers; principal identity by certificate |

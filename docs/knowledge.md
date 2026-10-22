@@ -17,17 +17,23 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 ### Token claims (virtual credentials)
 
 - `openid-connect` with `credential_claim` (default `["sub"]`) sets `ctx.authenticated_credential = { id = <claim> }`
-  when no Consumer was mapped. Consumer mapping only runs if `consumer_claim` is set.
-- `consumer_groups_claim` runs independently of Consumer mapping. Unknown group names are skipped. If none match,
-  the request gets 403 unless `consumer_groups_optional: true`.
-- `authenticated_groups_claim` feeds the ACL plugin directly, without Consumer Groups. AI Gateway auth strategies don't
-  expose it.
+  when no Consumer was mapped. Consumer mapping only runs if `consumer_claim` is set. Gateway 3.17 deprecates both for
+  the array forms `credential_claims` / `consumer_claims` (Kong source); the builder keeps the 3.16 names.
+- `consumer_groups_claim` runs independently of Consumer mapping. An array claim is matched element by element, by name
+  or UUID; unknown names are skipped. If none match, the request gets 403 unless `consumer_groups_optional: true`.
+  Principal groups (`match_consumer_groups`) replace it when the principal has any (Kong source).
+- `authenticated_groups_claim` only sets `ctx.authenticated_groups` for the ACL plugin: it never creates Consumer Group
+  membership, so Consumer-Group-scoped plugins don't fire from it (Kong source). AI Gateway auth strategies don't document
+  it; the config is passed through to the plugin as is.
 
 ### Kong Identity principals
 
 - A principal is the identity of an external client, workload or human calling a gateway. It is not a Konnect user.
 - One directory per region. The data plane looks principals up over mTLS (`/<directory>/v2/authenticate` and
-  `fetch-principal`) and caches them (directory TTL, 10 minutes by default). Uncached lookups are limited to 100/s per directory.
+  `fetch-principal`) and caches them for the lower of the directory TTL (600 s by default) and `db_cache_ttl`; misses
+  are cached 60 s at most. The docs limit uncached lookups to 100/s per directory.
+- `metadata.consumer_groups` entries resolve by UUID or by name in the data plane; the docs only promise UUIDs, so
+  generated metadata should switch to UUIDs if names stop resolving (Kong source).
 - Identity types: `oidc {issuer, claim{name,value}}` for tokens from any IdP; `auth_server_client {auth_server_id, client_id}`
   for Kong Identity clients; `control_plane_consumer`; `custom`. Principal `type` is `agent` or unset.
 - Plugins with `principals.enabled`: `key-auth`, `basic-auth`, `openid-connect` (`principal_claim`, `principal_by`,
@@ -58,10 +64,11 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 | Rule | Consequence |
 |---|---|
 | A plugin is unique per `{name, route, service, consumer, consumer_group}`. `condition` isn't part of the key | Two `rate-limiting-advanced` instances with different conditions on one route are rejected. Use `expressions` instead. |
-| With several Consumer Groups carrying the same plugin, the first group by name wins; a group-scoped plugin also shadows a route-level one | Stack plans with different plugins: API plans on `rate-limiting-advanced`, BU plans on basic `rate-limiting` (`lab-verified`: both header sets on one response) |
+| With several Consumer Groups carrying the same plugin, the first group in the request's list wins. Each batch of groups is sorted by name, but a second auth step appends its batch after the first, and the source calls the order "subject to change". A group-scoped plugin also shadows a route-level one | Stack plans with different plugins: API plans on `rate-limiting-advanced`, BU plans on basic `rate-limiting` (`lab-verified`: both header sets on one response) |
 | Basic `rate-limiting` only has fixed periods (second → year) | "100 per 5 s" needs `rate-limiting-advanced` (`window_size: [5]`) |
 | `service-protection` has `no_consumer_group` | It can only be a service-wide ceiling, not a plan |
 | Consumer-group-scoped plugins fire from `ctx.authenticated_consumer_groups`, without a Consumer | Groups from claims or principal metadata carry plans |
+| RLA `identifier: consumer` falls back to the credential, then to `missing_identifier_behavior` (default: client IP, 3.17) | Per-caller counters work with an OIDC virtual credential under `consumer` or `credential`; the builder emits `credential` to make it explicit |
 | ACL with `include_consumer_groups: true` matches group names with no Consumer | Subscription groups work with claims and principals |
 | 3.16: ACL `allow_when` / `deny_when`, RLA and basic RL `identifier`/`limit_by: principal`, plugin `expressions` (`limit`, `minute`…) reading `principal.metadata` | API Gateway can drop Consumer Groups entirely with principals |
 | `condition` variables: `principal.id/display_name/metadata`, `consumer_group.names/ids`, `route.tags`, `service.tags`, `http.headers.*`, `kong.ctx.shared` | Scope global plugins to tagged APIs: `route.tags != null && "order-management" in route.tags` |
@@ -71,13 +78,26 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 
 - Models, agents and MCP servers authenticate only through an **AuthStrategy** (`key-auth` or `openid-connect`).
   Auth plugins are rejected as policies.
-- Konnect allows **one `openid-connect` auth strategy per model** (`only 1 auth strategy of type "openid-connect" is allowed`,
-  `lab-verified`). Different issuers need different model routes.
-- Missing or unknown tokens: the converter adds an `anonymous` fallback consumer. With a model ACL the ACL rejects it first
-  (**403**, `lab-verified`); without one a `request-termination` answers **401** (`lab-verified`).
-- Model and agent `access.acls` accept group names only; the `acl` policy is global-only. Per-model subscriptions need sub-CGs.
+- Konnect allows **one `openid-connect` auth strategy per model, agent or MCP server** (`only 1 auth strategy of type
+  "openid-connect" is allowed`, `lab-verified`); a model may add one `key-auth` strategy. There is no gateway-wide limit:
+  models with different strategy sets get separate routes (Kong source). One strategy accepts several issuers with
+  `issuers_allowed` + `extra_jwks_uris` (passed through to the plugin), except on MCP servers with `access.metadata`,
+  which lower to `ai-mcp-oauth2` and drop both fields. With several issuers, map callers on a claim unique across them.
+- Missing or unknown tokens: the converter adds an `anonymous` fallback consumer carrying a `request-termination` (401).
+  With a model ACL the ACL rejects it first (**403**, `lab-verified` on a single-strategy model); without one the
+  termination answers **401** (`lab-verified`). Konnect pins `ai-deck-converter` v0.27.0; on converter main a model with a
+  single strategy gets no fallback and the auth plugin answers 401 itself.
+- A valid token whose `consumer_claims` value matches no AI Consumer is rejected the same way (`consumer_optional`
+  defaults to false); it is never proxied (Kong source).
+- Model and agent `access.acls` take one of `allow`, `deny`, `allow_when`, `deny_when`; the CEL forms need runtime 2.2 and can
+  read `principal.metadata` (Kong source). kongctl 1.20.1 doesn't declare them yet, so the builder still uses sub-CGs on
+  AI Gateway 2.x. MCP ACLs reject CEL. The `acl` policy is global-only.
+- Both auth strategy types accept `config.principals` (`enabled`, `directory`, `principal_claim`, `principal_by`,
+  `match_consumer`, `match_consumer_groups`, `error_on_miss`).
 - `ai-rate-limiting-advanced`: no `principal` identifier; rules use `match` on `consumer_group` (`key: name`) plus
-  `{type: credential, partition_by: true}` for per-caller budgets. Not allowed on agents or MCP servers.
+  `{type: credential, partition_by: true}` for per-caller budgets (the `credential` and `service` match types need
+  runtime 2.2). The counter key comes only from `partition_by` matchers; `identifier` is ignored in `policies` mode.
+  Not allowed on agents or MCP servers.
   One global policy with one rule per tier avoids the one-instance-per-plugin limit.
 - Policies accept `condition` (2.1+) but there are no plugin `expressions` in 2.2.
 - A2A: `ai-a2a-proxy` rewrites agent card URLs to the gateway. Skill trimming needs a `post-function` `body_filter`
@@ -148,7 +168,7 @@ Only Keycloak and Kong Identity were run in the lab; the others are documented d
 | Need | Source |
 |---|---|
 | Per caller without Consumers | Konnect `/v2/api-requests`: `oidc_credential` (virtual credential), `principal`, `consumer_group` / `ai_gateway_consumer_group` IDs, `application`, `api_package`, AI token counts (`lab-verified`) |
-| Per BU | A BU Consumer Group (analytics dimension) or a log label. Principal metadata is not an analytics dimension |
+| Per BU | A BU Consumer Group (analytics dimension) or a log label. Principal metadata is not an analytics dimension: the data plane only reports `principal.id` |
 | Prometheus | Only a `consumer` label. Identity labels need http-log `custom_fields_by_lua` → Vector `log_to_metric` (`lab-verified`) |
 | OpenTelemetry | `enable_principal_attribute` (3.16) adds `kong.auth.principal.*` to request counts (`lab-verified`) |
 | AI Cost Management (Beta, US) | Subjects `principal/<uuid>` > `consumer/<uuid>` > `oidc/<claim>`; tags from `ai-cost-*` headers via a global pre-function. Not lab-verified |

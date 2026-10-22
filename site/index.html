@@ -301,9 +301,9 @@ const STEPS = [
    {v:"none",label:"Any authenticated caller",s:"No per-resource subscription.",tag:"nocg",tagText:"No CG"},
    {v:"subcg",label:"Subscription groups + ACL",s:`One sub-CG per ${(ai||ai1)?(s.target==="models"?"model":s.target==="a2a"?"agent":"MCP server"):"API"}. Membership from ${subSrc}.`,tag:"cg",tagText:"sub-CG"},
    {v:"meta",label:"Principal metadata + ACL allow_when",s:"<code>allow_when: '\"orders-api\" in principal.metadata.subscriptions'</code>",tag:"nocg",tagText:"No CG",
-     disabled:!pr?"Needs Kong Identity principals.":ai?"In AI Gateway 2.2, model and agent access lists accept group names only, and the acl policy is global-only.":!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
+     disabled:!pr?"Needs Kong Identity principals.":ai?(s.target==="mcp"?"MCP server ACLs take group names only: allow_when (CEL) is rejected.":"Model and agent ACLs accept allow_when from AI Gateway 2.2, but kongctl 1.20.1 can't declare it yet and this path hasn't been run."):!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
    {v:"claimacl",label:"Groups claim + ACL",s:(ai||ai1)&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
-     disabled:!cl?"Needs token claims as the identity record.":(ai&&s.target!=="mcp")?"AI Gateway auth strategies don't expose authenticated_groups_claim; model and agent ACLs need group names.":null}];
+     disabled:!cl?"Needs token claims as the identity record.":(ai&&s.target!=="mcp")?"AI Gateway auth strategies don't document authenticated_groups_claim (it is only passed through to the plugin, untested). Use subscription groups.":null}];
  }},
  {id:"plans",title:"Usage plans",multi:true,ask:"Which usage plans apply? Pick several if they stack.",help:s=>isAIany(s)?"LLM token budgets are owned by the <b>AI team</b>.":"Per-API plans are owned by the <b>API owner</b>, BU-wide plans by the <b>org admin</b>. They use different plugins, so both apply to one caller.",options:s=>{
    const ai=isAI(s), ai1=isAI1(s), pr=s.record==="principals";
@@ -446,14 +446,15 @@ function derive(s){
   else auth = {plugin:"openid-connect",mode:s.record};
   const authStrategy = ai;
   // warnings
-  if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model or agent: callers from another issuer need their own route.");
+  if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model, agent or MCP server. Several issuers: list them on that strategy (issuers_allowed + extra_jwks_uris) and map callers on a claim unique across issuers, or give the other issuer its own model.");
   if(!ai && gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
   if(ai) warns.push(s.access==="subcg"
     ? "AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first."
     : "AI Gateway answers 401 for a missing or unknown token: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
+  if(ai&&co&&oidcLike(s)) notes.push("A valid token whose claim matches no AI Consumer is rejected like a missing token (consumer_optional: false): add the AI Consumer before the caller's first request.");
   if(cl&&groups.length&&s.access!=="subcg") notes.push("Token groups are optional (consumer_groups_optional: true): callers with no known group still get through; plans and BU attribution apply to group members only.");
   if(!ai && auth.plugin==="openid-connect") warns.push("Gateway 3.16 rejects the config if openid-connect has ssl_verify: false. Keep it true and set cache_tokens_salt for decK.");
-  if(ai1 && oidcLike(s)) notes.push("Plain openid-connect accepts several issuers on one route (issuers_allowed + extra_jwks_uris), unlike AI Gateway 2.x auth strategies.");
+  if(ai1 && oidcLike(s)) notes.push("Plain openid-connect accepts several issuers on one route (issuers_allowed + extra_jwks_uris).");
   if(ai1 && plans.includes("llm")) warns.push("ai-rate-limiting-advanced policy mode has no credential matcher on 3.15/3.16: per-caller budgets without Consumers use the deprecated llm_providers mode with identifier: credential.");
   if(ai1 && s.target==="a2a") notes.push("ai-a2a-proxy needs Kong Gateway 3.14+ and is generally available.");
   if(s.idp==="entra" && cl) warns.push("Entra ID groups are object IDs. Use app roles (roles claim) and name the groups after the roles.");
