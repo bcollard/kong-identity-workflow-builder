@@ -699,8 +699,7 @@ ${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.le
     display_name: ${WHO[s.caller].label} API keys
     type: key-auth
     config:
-      key_names: [apikey]
-${d.pr?"      principals: { enabled: true, directory: default, error_on_miss: true }":"      hide_credentials: true"}`;
+      key_names: [apikey]${d.pr?"\n      principals: { enabled: true, directory: default, error_on_miss: true }":s.target==="mcp"?"":"\n      hide_credentials: true"}`;  // ai-mcp-proxy needs the credential: the converter overrides hide_credentials to false
     // AI Consumers can't list groups: membership is declared on the group (consumers: [refs])
     const cgs = d.groups.map(g=>`  - { ref: ${g.name}, name: ${g.name}, display_name: "${g.kind} · ${g.owner}"${d.co?`, consumers: [${d.who.name}]`:""} }`).join("\n");
     const cons = d.co?`    consumers:
