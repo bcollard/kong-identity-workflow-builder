@@ -11,7 +11,7 @@ jobs:
         with: { fetch-depth: 0 }   # the append-only codes test compares with the last release tag
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 22 }
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0 · runs ai-deck-converter for the deck ai sync tests
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0 · runs ai-deck-converter for the deck ai sync tests
         with: { go-version-file: test/tools/aigw-convert/go.mod, cache-dependency-path: test/tools/aigw-convert/go.sum }
       - run: npm ci
       - name: Unit, schema, consistency and render tests
