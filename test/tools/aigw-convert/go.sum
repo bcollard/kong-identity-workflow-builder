@@ -1,5 +1,5 @@
-github.com/Kong/ai-deck-converter v0.19.7 h1:LKr0+ycaWk0P7PflLkuB7Mynn2svplEYaRERS0gi5h8=
-github.com/Kong/ai-deck-converter v0.19.7/go.mod h1:tsirPu/2guK1tjGyBueqk82ULcY0LYsjvMSl+pbJE0I=
+github.com/Kong/ai-deck-converter v0.19.10 h1:Oxem+nhmWqbd22aJ5GbBW2YdXKn/noVrjco/3dTpMqs=
+github.com/Kong/ai-deck-converter v0.19.10/go.mod h1:A5gqNV9mP2IsP8n+zhzH9SCu8v42uvYN2wQAC7KtTqQ=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
