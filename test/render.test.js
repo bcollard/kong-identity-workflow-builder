@@ -256,5 +256,6 @@ test("click through an AI Gateway 2.3 MCP server with Token Vault", { skip: !KON
   assert.match(code, /token_vault: \{ provider: github \}/);
   assert.match(code, /enable_credential_manager: true/);
   assert.match(text(res), /Token Vault/);
+  assert.match(text(res), /GitHub never receives your IdP token/);
   w.close();
 });

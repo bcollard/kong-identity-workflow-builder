@@ -163,6 +163,10 @@ kongctl docs, Konnect AI Gateway OpenAPI):
   `snowflake`, `databricks` (plus your endpoints); `atlassian-rovo`, `datadog`, `miro` (DCR, no client); `custom-oauth`
   (client + endpoints); `static_secret` (API key stored on the provider, shared only). `credential_type`: `user` (default
   for OAuth: each principal enrolls) or `shared` (an admin enrolls once, or stores the secret).
+- Upstream services need no RFC 8693 support (GitHub and Atlassian have none): the exchange runs between the gateway and
+  Token Vault. At enrollment the user consents on the service, Token Vault exchanges the authorization code itself, then
+  refreshes the token before expiry (provider `refresh_buffer_seconds`, with locking; a failed refresh keeps releasing a
+  still-valid token). Source: developer.konghq.com/kong-identity/token-vault/.
 - Callers are identified from a trusted IdP token (`iss` + `sub`; trusted IdP on the directory with
   `vault_access_enabled: true`, issuer equal to the token's `iss`; principals are provisioned just in time) or from a Kong
   Identity API key (`subject_token_type: api_key`). Consumer credentials can't be exchanged. Kong Identity auth servers
