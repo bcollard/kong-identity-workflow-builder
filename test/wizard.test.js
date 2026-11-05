@@ -88,10 +88,21 @@ test("3.15 disables allow_when and metadata-driven plans", konnectOnly, () => {
   assert.ok(!opt("plans", "tier-meta").disabled); assert.ok(!opt("plans", "bu-meta").disabled);
 });
 
-test("AI Gateway 2.x can't do group-free subscriptions on models; 1.x can", konnectOnly, () => {
-  const base = { deploy: "konnect", caller: "apps", target: "models", cred: "cc", idp: "ki", record: "principals" };
-  reset({ ...base, product: "ai" }); assert.ok(opt("access", "meta").disabled);
-  reset({ ...base, product: "ai1", version: "3.16" }); assert.ok(!opt("access", "meta").disabled);
+test("principal-metadata subscriptions: AI Gateway 2.x models and agents, not MCP servers; 1.x on every target", konnectOnly, () => {
+  const base = { deploy: "konnect", caller: "apps", cred: "cc", idp: "ki", record: "principals" };
+  for (const target of ["models", "a2a", "mcp"]) {
+    reset({ ...base, target, product: "ai" }); assert.equal(!!opt("access", "meta").disabled, target === "mcp", `ai ${target}`);
+    reset({ ...base, target, product: "ai1", version: "3.16" }); assert.ok(!opt("access", "meta").disabled, `ai1 ${target}`);
+  }
+});
+
+test("Terraform creates principals with the stable kong/konnect identity resources", konnectOnly, () => {
+  for (const [cred, idp, res] of [["apikey", null, "konnect_identity_principal_api_key"], ["cc", "ki", "konnect_identity_principal_identity"], ["cc", "okta", "konnect_identity_principal_identity"]]) {
+    reset({ product: "api", deploy: "konnect", version: "3.16", caller: "apps", cred, idp, record: "principals", access: "meta", plans: ["none"], analytics: ["konnect"] });
+    const tf = X.genTf(X.S, X.derive(X.S)).text;
+    for (const r of ["konnect_identity_directory", "konnect_identity_principal", res]) assert.match(tf, new RegExp(`resource "${r}"`), `${cred}/${idp}: ${r}`);
+    assert.doesNotMatch(tf, /konnect-beta/);
+  }
 });
 
 test("token budgets only on LLM models", () => {

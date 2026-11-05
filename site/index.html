@@ -301,7 +301,7 @@ const STEPS = [
    {v:"none",label:"Any authenticated caller",s:"No per-resource subscription.",tag:"nocg",tagText:"No CG"},
    {v:"subcg",label:"Subscription groups + ACL",s:`One sub-CG per ${(ai||ai1)?(s.target==="models"?"model":s.target==="a2a"?"agent":"MCP server"):"API"}. Membership from ${subSrc}.`,tag:"cg",tagText:"sub-CG"},
    {v:"meta",label:"Principal metadata + ACL allow_when",s:"<code>allow_when: '\"orders-api\" in principal.metadata.subscriptions'</code>",tag:"nocg",tagText:"No CG",
-     disabled:!pr?"Needs Kong Identity principals.":ai?(s.target==="mcp"?"MCP server ACLs take group names only: allow_when (CEL) is rejected.":"Model and agent ACLs accept allow_when from AI Gateway 2.2, but kongctl 1.20.1 can't declare it yet and this path hasn't been run."):!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
+     disabled:!pr?"Needs Kong Identity principals.":ai?(s.target==="mcp"?"MCP server ACLs accept allow_when from AI Gateway 2.3. The builder targets 2.2: use subscription groups.":null):!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
    {v:"claimacl",label:"Groups claim + ACL",s:(ai||ai1)&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
      disabled:!cl?"Needs token claims as the identity record.":(ai&&s.target!=="mcp")?"AI Gateway auth strategies don't document authenticated_groups_claim (it is only passed through to the plugin, untested). Use subscription groups.":null}];
  }},
@@ -448,7 +448,8 @@ function derive(s){
   // warnings
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model, agent or MCP server. Several issuers: list them on that strategy (issuers_allowed + extra_jwks_uris) and map callers on a claim unique across issuers, or give the other issuer its own model.");
   if(!ai && gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
-  if(ai) warns.push(s.access==="subcg"
+  if(ai && s.access==="meta") notes.push(`${tgt.kind==="model"?"Model":"Agent"} access.acls.allow_when needs kongctl 1.23+ (AI Gateway runtime 2.2+). One rule type per ACL: allow_when replaces allow.`);
+  if(ai) warns.push(s.access==="subcg"||s.access==="meta"
     ? "AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first."
     : "AI Gateway answers 401 for a missing or unknown token: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
   if(ai&&co&&oidcLike(s)) notes.push("A valid token whose claim matches no AI Consumer is rejected like a missing token (consumer_optional: false): add the AI Consumer before the caller's first request.");
@@ -469,7 +470,7 @@ function derive(s){
   const A=s.analytics||[];
   if(A.includes("konnect")) an.push({tool:"Konnect Analytics",where:"Observability → Explorer, or /v2/api-requests",dims:[pr?"principal":cl?"oidc_credential":"consumer", ...(groups.length?["consumer group"]:[]), ...(aiAny?["model","provider","tokens"]:["route","status"])].join(", ")});
   if(A.includes("cost")) an.push({tool:"AI Cost Management (Beta)",where:"Applications → AI Cost Management · global pre-function for ai-cost-* tags",dims:`subject ${pr?"principal/<uuid>":cl?"oidc/<"+credClaim+">":"consumer/<uuid>"}, tags${buDim?" incl. bu":""}`});
-  if(A.includes("agentan")) an.push({tool:"Agent analytics",where:"Konnect Analytics · ai-a2a-proxy logging.statistics",dims:"method, task, context, error, principal"});
+  if(A.includes("agentan")) an.push({tool:"Agent analytics",where:"Konnect Analytics · ai-a2a-proxy log_statistics (on by default)",dims:"method, task, context, error, principal"});
   if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:ai?"prometheus policy (AI metrics) + http-log → Vector → Prometheus for identity labels":ai1?"prometheus plugin (ai_metrics: true) + http-log → Vector for identity labels":"prometheus plugin + http-log (custom_fields_by_lua) → Vector log_to_metric",dims:aiAny?"model, provider, tokens; caller and BU via the log pipeline":"service, route, status; caller and BU via the log pipeline"});
   if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin/policy → collector",dims:!ai&&pr&&gw316(s)?`kong.auth.principal.display_name on request counts${ai1?", gen_ai.* metrics":""}`:aiAny?"gen_ai.* metrics, traces":"traces, request metrics"});
   if(buDim && pr && !groups.some(g=>g.kind==="bu"||g.name.startsWith("bu-"))) notes.push("Principal metadata isn't an analytics dimension: keep a BU group or a log label to report by BU.");
@@ -763,7 +764,8 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
     type: rate-limiting-advanced
     config: { identifier: ${hitIdentifier(s)}, limit: [100], window_size: [60], window_type: fixed, strategy: local, namespace: mcp-${d.tgt.name} }`);
     if((s.analytics||[]).includes("prom")) pol.push(`  - ref: metrics\n    name: metrics\n    display_name: Metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
-    const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`:"";
+    const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`
+      :s.access==="meta"?`, acls: { allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions'] }`:"";
     const stratName = d.auth.plugin==="openid-connect"?`${s.caller}-auth`:`${s.caller}-keys`;
     let ent;
     if(s.target==="models") ent=`    models:
@@ -781,7 +783,7 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
         name: ${d.tgt.name}
         display_name: ${d.tgt.name}
         type: a2a
-        config: { url: http://kongair-agent.internal:10000/, route: { paths: [/agents/${d.tgt.name}] }, logging: { statistics: true } }
+        config: { url: http://kongair-agent.internal:10000/, route: { paths: [/agents/${d.tgt.name}] } }   # A2A statistics are logged by default
         access: { auth_strategies: [${stratName}]${allow} }
         policies: [trim-agent-card]`;
     else ent=`    mcp_servers:
@@ -883,7 +885,9 @@ const API_TAGS=[
   [/^# Kong Identity auth server, scope and client/, "tf:konnect_identity_auth_server, konnect_identity_auth_server_scope, konnect_identity_auth_server_client"],
   [/^# (Claim templated|Groups claim templated)/, "tf:konnect_identity_auth_server_claim"],
   [/^# Directory/, "tf:konnect_identity_directory"],
-  [/^# (Principal|API key, generated|Link the)/, "api"],
+  [/^# Principal/, "tf:konnect_identity_principal"],
+  [/^# API key, generated/, "tf:konnect_identity_principal_api_key (type imported: Terraform can't read back a generated key)"],
+  [/^# Link the/, "tf:konnect_identity_principal_identity"],
   [/^# consumer_groups metadata takes/, "read"],
   [/^# Register the calling agent in Konnect Catalog/, "api"],
   [/^# Kong Identity as DCR provider/, "tf:konnect_dcr_provider"],
@@ -967,7 +971,7 @@ DIR=$(curl -s $KONNECT_API/v2/directories -H "$H" | jq -r '.data[0].id // empty'
 
 # Principal (identity / security pipeline)
 P=$(curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals -H "$H" -H 'content-type: application/json' \\
-  -d '${JSON.stringify(Object.assign({display_name:d.who.name},s.caller==="agents"?{type:"agent"}:{}, {metadata:d.meta}))}' | jq -r .id)`);
+  -d '${JSON.stringify(Object.assign({display_name:d.who.name},principalType(s)?{type:principalType(s)}:{}, {metadata:d.meta}))}' | jq -r .id)`);
     if(s.cred==="apikey") out.push(`# API key, generated by Kong Identity (secret returned once)
 curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/api-keys -H "$H" -H 'content-type: application/json' -d '{"type":"v1"}'`);
     else if(s.idp==="ki") out.push(`# Link the Kong Identity client to the principal
@@ -1062,10 +1066,47 @@ resource "konnect_gateway_plugin_ace" "portal_access" {
 }`);
   return {lang:"hcl",title:"Terraform",text:t.join("\n\n")};
 }
+// Kong Identity principal type: agent (deployed AI agent), user (human), or unclassified
+const principalType = s => s.caller==="agents"?"agent":s.caller==="employees"?"user":null;
+// Directory, principal, identity and API key with the kong/konnect 3.28+ identity resources
+function tfPrincipal(s,d){
+  const n=d.who.name.replace(/-/g,"_"), pt=principalType(s), out=[];
+  out.push(`resource "konnect_identity_directory" "default" {
+  name                     = "default"   # one directory per region: import the existing one if you have it
+  allow_all_control_planes = true
+}
+resource "konnect_identity_principal" "${n}" {
+  directory_id = konnect_identity_directory.default.id
+  display_name = "${d.who.name}"${pt?`\n  type         = "${pt}"`:""}
+  metadata     = jsonencode(${JSON.stringify(d.meta)})
+}`);
+  if(s.cred==="apikey") out.push(`variable "${n}_api_key" {
+  type      = string
+  sensitive = true   # Terraform can't read back a key Kong Identity generates: import your own
+}
+resource "konnect_identity_principal_api_key" "${n}" {
+  directory_id = konnect_identity_directory.default.id
+  principal_id = konnect_identity_principal.${n}.id
+  type         = "imported"
+  secret       = var.${n}_api_key
+}`);
+  else out.push(`resource "konnect_identity_principal_identity" "${n}" {
+  directory_id = konnect_identity_directory.default.id
+  principal_id = konnect_identity_principal.${n}.id
+${s.idp==="ki"?`  auth_server_client = {
+    auth_server_id = konnect_identity_auth_server.acme.id
+    client_id      = konnect_identity_auth_server_client.${n}.id
+  }`:`  oidc = {
+    issuer = "${d.idp.issuer}"
+    claim  = { name = "${d.credClaim}", value = "${s.caller==="employees"?d.who.name:"<client_id>"}" }
+  }`}
+}`);
+  return out;
+}
 function genTf(s,d){
   if(d.portal) return genTfPortal(s,d);
   const t=[];
-  t.push(`terraform {\n  required_providers {\n    konnect      = { source = "kong/konnect" }\n${d.pr?'    konnect-beta = { source = "kong/konnect-beta" }   # identity_directory\n':""}  }\n}`);
+  t.push(`terraform {\n  required_providers {\n    konnect = { source = "kong/konnect"${d.pr?`, version = ">= 3.28.0" }   # identity principals`:" }"}\n  }\n}`);
   if(s.idp==="ki") t.push(`resource "konnect_identity_auth_server" "acme" {
   name     = "acme"
   audience = "kong-gateway"
@@ -1084,13 +1125,7 @@ resource "konnect_identity_auth_server_client" "${d.who.name.replace(/-/g,"_")}"
   allow_scopes     = [konnect_identity_auth_server_scope.invoke.id]
   labels           = { app = "${d.who.name}" }
 }`);
-  if(d.pr) t.push(`resource "konnect_identity_directory" "default" {
-  provider                 = konnect-beta
-  name                     = "default"
-  allow_all_control_planes = true
-}
-# Principals, their metadata and identities have no Terraform resource yet:
-# create them with the Konnect API calls (see the Konnect API tab).`);
+  if(d.pr) t.push(...tfPrincipal(s,d));
   if(d.ai1){
     t.push(`resource "konnect_gateway_control_plane" "acme" {
   name         = "acme-ai"
@@ -1177,7 +1212,7 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
 ${oc?`      issuer            = "${d.idp.issuer}/.well-known/openid-configuration"
       auth_methods      = ["bearer"]
       audience_required = ["kong-gateway"]
-${d.cl||d.pr?`      credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim = ["${d.idp.groups}"]\n`:""}      ssl_verify        = true`:`      key_names = ["apikey"]`}
+${d.cl||d.pr?`      credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim = ["${d.idp.groups}"]\n`:""}      cache_tokens_salt = "change-me"\n      ssl_verify        = true`:`      key_names = ["apikey"]`}
 ${d.pr?`      principals = { enabled = true, directory = "default", error_on_miss = true${oc?", match_consumer_groups = true":""} }`:""}
     }
   }
@@ -1214,7 +1249,7 @@ ${d.pr?`      principals = { enabled = true, directory = "default", error_on_mis
     t.push(`resource "${res}" "${d.tgt.name.replace(/-/g,"_")}" {
   gateway_id = konnect_ai_gateway.acme.id
   # name, config, targets: see the kongctl tab for the same entity
-  # access = { auth_strategies = ["${s.caller}-${oc?"auth":"keys"}"]${s.access==="subcg"?`, acls = { allow = ["${d.tgt.sub}"] }`:""} }
+  # access = { auth_strategies = ["${s.caller}-${oc?"auth":"keys"}"]${s.access==="subcg"?`, acls = { allow = ["${d.tgt.sub}"] }`:s.access==="meta"?`, acls = { allow_when = ["\\"${d.tgt.name}\\" in principal.metadata.subscriptions"] }`:""} }
 }`);
   } else {
     t.push(`resource "konnect_gateway_control_plane" "acme" {
@@ -1325,7 +1360,7 @@ function applyPlan(s,d,cfg,tabs){
   const declName=d.ai?(s.deploy==="konnect"?"kongctl":"deck ai sync"):"decK";
   if(has("api")){
     const items=[{tab:"api",role:apiOnly?"required":"choice",text:apiOnly
-      ?(d.portal?"Portal applications and registrations, plus the blocks marked \"API only\".":"Principals, their identities and API keys exist only in the Konnect API (blocks marked \"API only\").")
+      ?(d.portal?"Portal applications and registrations, plus the blocks marked \"API only\".":"The blocks marked \"API only\" have no decK, kongctl or Terraform resource.")
       :"Each block names its Terraform equivalent."}];
     if(has("tf")&&tfAlt) items.push({tab:"tf",role:apiOnly?"partial":"choice",text:apiOnly
       ?"Can replace the blocks marked \"or Terraform\", not the API-only ones.":"Same objects as the API calls."});

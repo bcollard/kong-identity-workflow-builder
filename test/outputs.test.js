@@ -80,15 +80,11 @@ test("kongctl AI Gateway files match the kongctl schema", { skip: !KONNECT && "K
   for (const s of CLASSES.filter(c => c.product === "ai" && c.deploy === "konnect")) {
     const doc = yaml.load(render(X, s).cfg.decl.text);
     for (const gw of doc.ai_gateways) {
-      // Known gap in `kongctl explain` 1.20.1: principals.match_consumer_groups is missing from the schema although the
-      // Konnect API accepts it (applied with kongctl 1.20.1 in the lab). The field is still checked against the AI Gateway
-      // 2.2 openid-connect schema below.
       const forAjv = JSON.parse(JSON.stringify(gw));
-      for (const a of forAjv.auth_strategies || []) if (a.config?.principals) delete a.config.principals.match_consumer_groups;
       // The explain schema describes top-level resource files, which carry an "ai_gateway" back-reference.
       // Nested items get it implicitly (lab-verified), so add it before validating.
       for (const k of Object.keys(forAjv)) if (Array.isArray(forAjv[k])) forAjv[k].forEach(it => { if (it && typeof it === "object") it.ai_gateway ??= "!ref aigw"; });
-      // `kongctl explain` 1.20.1 exports models as an empty closed object; check the fields the lab-applied file used instead.
+      // `kongctl explain` (1.20.1 to 1.23.0) exports models as an empty closed object; check the fields the lab-applied file used instead.
       for (const m of forAjv.models || []) for (const k of ["ref", "name", "display_name", "type", "formats", "targets", "config"]) if (!(k in m)) fail(s, `kongctl model ${m.name} lacks ${k}`);
       delete forAjv.models;
       if (!validateGateway(forAjv)) for (const e of validateGateway.errors.slice(0, 3))

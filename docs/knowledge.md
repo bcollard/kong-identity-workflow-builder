@@ -1,6 +1,8 @@
 # Knowledge behind the builder
 
-Product facts the wizard relies on. Versions: Kong Gateway 3.15 / 3.16 (incl. AI plugins, "AI Gateway 1.x"), AI Gateway 2.2, Konnect (2026-10).
+Product facts the wizard relies on. Versions: Kong Gateway 3.15 / 3.16 (incl. AI plugins, "AI Gateway 1.x"), AI Gateway 2.2, Konnect (2026-11).
+Checked on 2026-11-05: Kong Gateway 3.17 is not released (3.16.0.1 is the latest); AI Gateway 2.3.0 shipped on 2026-11-04
+and is the Konnect default runtime, but the builder still generates 2.2 config (see "AI Gateway 2.3" below).
 Each fact names its source: Kong docs (developer.konghq.com), the Kong Gateway source, the Konnect Terraform
 provider, or a lab run (`lab-verified`). Check the source before changing a rule in `site/index.html`.
 
@@ -17,8 +19,10 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 ### Token claims (virtual credentials)
 
 - `openid-connect` with `credential_claim` (default `["sub"]`) sets `ctx.authenticated_credential = { id = <claim> }`
-  when no Consumer was mapped. Consumer mapping only runs if `consumer_claim` is set. Gateway 3.17 deprecates both for
-  the array forms `credential_claims` / `consumer_claims` (Kong source); the builder keeps the 3.16 names.
+  when no Consumer was mapped. Consumer mapping only runs if `consumer_claim` is set. `consumer_claims` (array of paths)
+  already exists in 3.16, with `consumer_claim` deprecated. `credential_claims` (array of paths, first match wins) arrives in
+  Gateway 3.17 and AI Gateway 2.3; `credential_claim` becomes its deprecated shorthand (removal in 4.0) and the control
+  plane strips `credential_claims` for older data planes (Kong source). The builder keeps `credential_claim`.
 - `consumer_groups_claim` runs independently of Consumer mapping. An array claim is matched element by element, by name
   or UUID; unknown names are skipped. If none match, the request gets 403 unless `consumer_groups_optional: true`.
   Principal groups (`match_consumer_groups`) replace it when the principal has any (Kong source).
@@ -35,19 +39,30 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 - `metadata.consumer_groups` entries resolve by UUID or by name in the data plane; the docs only promise UUIDs, so
   generated metadata should switch to UUIDs if names stop resolving (Kong source).
 - Identity types: `oidc {issuer, claim{name,value}}` for tokens from any IdP; `auth_server_client {auth_server_id, client_id}`
-  for Kong Identity clients; `control_plane_consumer`; `custom`. Principal `type` is `agent` or unset.
+  for Kong Identity clients; `control_plane_consumer`; `custom`. No certificate (mTLS) identity type.
+- Principal `type` is `agent` (deployed AI agent), `user` (human) or unset; the builder sets `user` for employees.
+  Other principal fields: `active` (inactive principals are treated as nonexistent; portal principals can't be deactivated),
+  read-only `groups` and `provisioned_by` (`konnect_user`, `developer_portal`, `trusted_idp`). Metadata: at most 50 keys,
+  values are bool, string, int or arrays of strings/ints.
+- Directories also hold principal groups (with group API keys), principal basic-auth credentials and trusted IdPs
+  (`issuer_url`, `jwks_uri`, JIT provisioning with claim mapping).
 - Plugins with `principals.enabled`: `key-auth`, `basic-auth`, `openid-connect` (`principal_claim`, `principal_by`,
   `match_consumer`, `match_consumer_groups`, `error_on_miss`). In principals mode `key-auth` skips local credentials
   (`identity_realms: []`).
 - Plugins can't be attached to a principal. Scope them with `condition` expressions instead.
-- No Terraform or kongctl resource for principals; use the Konnect API (`/v2/directories/{id}/principals`, `/identities`, `/api-keys`).
-  The directory itself is `konnect_identity_directory` in the beta provider.
+- Terraform `kong/konnect` 3.28.0 (2026-10-06) manages them: `konnect_identity_directory` (moved from the beta provider),
+  `_principal` (`metadata` is a JSON string), `_principal_identity` (one of `oidc`, `auth_server_client`,
+  `control_plane_consumer`, `custom`), `_principal_api_key`, `_principal_basic_auth`, `_group`, `_group_membership`,
+  `_trusted_idp`. Terraform can't read back a generated (`v1`) API key secret, so the builder imports one (`type: imported`,
+  `secret` from a sensitive variable) (`terraform validate` on 3.28). kongctl and Kong Operator have no principal resource.
 
 ### Kong Identity auth servers
 
 - OAuth 2.0 / OIDC servers hosted by Konnect, one subdomain each: `https://<sub>.<region>.identity.konghq.com/auth`.
   Token endpoint `/oauth/token`, JWKS `/.well-known/jwks`.
-- Publicly documented grant: `client_credentials`. Employees should keep a corporate IdP.
+- Publicly documented grant: `client_credentials`. `authorization_code` and `refresh_token` are internal only; the
+  `jwt-bearer` grant (private-key-JWT client auth, ID-JAG) and client ID metadata documents are not generally available.
+  Employees should keep a corporate IdP.
 - Claims can be static or templated per client: `${ .Client.Labels.skills | default "" | splitList "." | toJson }`
   renders a JSON array (`lab-verified`).
 - Terraform: `konnect_identity_auth_server`, `_scope`, `_client`, `_claim`, `_client_secret`.
@@ -85,13 +100,17 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   which lower to `ai-mcp-oauth2` and drop both fields. With several issuers, map callers on a claim unique across them.
 - Missing or unknown tokens: the converter adds an `anonymous` fallback consumer carrying a `request-termination` (401).
   With a model ACL the ACL rejects it first (**403**, `lab-verified` on a single-strategy model); without one the
-  termination answers **401** (`lab-verified`). Konnect pins `ai-deck-converter` v0.27.0; on converter main a model with a
-  single strategy gets no fallback and the auth plugin answers 401 itself.
+  termination answers **401** (`lab-verified`). Konnect now pins `ai-deck-converter` v0.32.7 (was v0.27.0). On converter
+  main a model with a single strategy gets no fallback and the auth plugin answers 401 itself; agents keep the fallback and
+  MCP servers never get one. Whether v0.32.7 includes the model change is unverified: re-run AI-1 / AI-2 to check.
 - A valid token whose `consumer_claims` value matches no AI Consumer is rejected the same way (`consumer_optional`
   defaults to false); it is never proxied (Kong source).
-- Model and agent `access.acls` take one of `allow`, `deny`, `allow_when`, `deny_when`; the CEL forms need runtime 2.2 and can
-  read `principal.metadata` (Kong source). kongctl 1.20.1 doesn't declare them yet, so the builder still uses sub-CGs on
-  AI Gateway 2.x. MCP ACLs reject CEL. The `acl` policy is global-only.
+- Model and agent `access.acls` take exactly one of `allow`, `deny`, `allow_when`, `deny_when`; the CEL forms need runtime
+  2.2 and can read `principal.metadata` (Kong source). kongctl declares them from 1.23.0; the builder emits `allow_when` on
+  models and agents for "Principal metadata + ACL allow_when" (not run in a lab yet). MCP server ACLs accept CEL from
+  runtime 2.3 only. The `acl` policy is global-only.
+- Konnect agent `config.logging` accepts only `payloads` and `max_payload_size` (kongctl 1.23.0 schema); A2A statistics
+  are logged by default (`ai-deck-converter` `DefaultLogStatistics = true`).
 - Both auth strategy types accept `config.principals` (`enabled`, `directory`, `principal_claim`, `principal_by`,
   `match_consumer`, `match_consumer_groups`, `error_on_miss`).
 - `ai-rate-limiting-advanced`: no `principal` identifier; rules use `match` on `consumer_group` (`key: name`) plus
@@ -110,6 +129,56 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   listed on each consumer and passthrough MCP servers using top-level `upstream_url`. The converter ignores unknown keys,
   so a kongctl file given to `deck ai sync` becomes an empty config. Preview the lowered config with
   `deck file ai2kong -s aigw.yaml`.
+
+## AI Gateway 2.3 (released, not targeted yet)
+
+AI Gateway 2.3.0 shipped on 2026-11-04 (Konnect default runtime, `min_runtime_version: "2.3"` in kongctl). What it would
+change in the builder (Kong source, kongctl docs, Konnect AI Gateway OpenAPI):
+
+- MCP server ACLs: `access.acls`, `default_tool_acls` and per-tool ACLs accept `allow_when` / `deny_when`. A server-level
+  rule takes exactly one form; a tool entry may pair `allow`+`deny` or `allow_when`+`deny_when`, not mix them. On a
+  `passthrough-listener`, a server-level `allow_when` gates tools, not the MCP connection.
+- CEL can read `principal.groups` and `principal.type`.
+- `ai-rate-limiting-advanced`: `match: [{type: principal, key: id | display_name | metadata.<name>, partition_by: true}]`
+  and `custom_key` (with `expressions.custom_key`). Still not allowed on agents or MCP servers.
+- Policies take `expressions` (CEL per field, static fallback).
+- MCP servers: native `rate_limiting.limits[{method | tool, limit, window_size}]` per node, listener types only.
+- `openid-connect` strategies: `credential_claims`, `principals.jit.{all_claims, claims}` (claims sent to the principal lookup).
+  An MCP strategy with `access.metadata` now lowers to `openid-connect` instead of `ai-mcp-oauth2`.
+- Token Vault (below) on MCP servers, model providers and OIDC auth strategies.
+
+## Token Vault
+
+- Konnect-only credential broker in Kong Identity: a directory with `vault_enabled: true` stores each principal's upstream
+  OAuth tokens or static secrets, envelope-encrypted to customer keys. Provider templates: GitHub, Slack, Atlassian Rovo,
+  Datadog, Google, Miro, custom OAuth, static secret. The gateway exchanges the caller's token for the upstream credential
+  (RFC 8693 token exchange); a caller who hasn't enrolled gets an enrollment URL.
+- Gateway side: AI Gateway 2.3 only (`ai-mcp-proxy` `auth.provider: token_vault`, plus `token-vault-exchange`,
+  `token-vault-callback-handler`, `token-vault-credential-manager` plugins). Not in Kong Gateway 3.16 or 3.17.
+- Konnect entities: a `token-vault` datastore (`directory`, `current_version`, `keys` as `{vault://…}` references);
+  `token_vault {provider, subject_token_type, credential, cache}` + `datastores` on MCP servers and model providers;
+  `token_vault.enable_credential_manager` on OIDC auth strategies. kongctl docs require the datastore whenever `token_vault`
+  is set; the Konnect validator and converter only when `enable_credential_manager: true`.
+- Terraform 3.28: `konnect_ai_gateway_datastore`, `konnect_identity_vault_key`, `_vault_provider`, `_vault_provider_credential`.
+- The Konnect admin endpoints and UI are still behind a feature flag (2026-11): not generally available.
+
+## Kong Operator
+
+- Latest: v2.4.0-rapid.3.1 (2026-11-04); latest non-rapid v2.3.3. No CRDs for Kong Identity directories, principals or
+  auth servers: identity objects come from Terraform or the Konnect API.
+- AI Gateway CRDs (`aiconfiguration.konghq.com`): `AIGatewayAuthStrategy` (`key-auth` / `openid-connect`, `principals`,
+  `tokenVault`), `AIGatewayMCPServer` (`tokenVault`, ACLs referencing `AIGatewayConsumerGroup`), `AIGatewayDatastore`
+  (`redis-ce`, `redis-ee`, `vectordb`, `token-vault`), `AIGatewayConsumer`, `AIGatewayConsumerCredential` (`api-key` only).
+
+## Kong Gateway 3.17 (unreleased)
+
+On `master` as of 2026-11-05, no release date. Relevant to the builder once it ships:
+
+- `openid-connect` `credential_claims` and `principals.jit` (see Token claims).
+- `rate-limiting-advanced` `missing_identifier_behavior`: `ip` (default), `reject` (403), `skip`, `fixed_key`.
+- CEL variables `principal.type` and `principal.groups` in `condition` and ACL `allow_when` / `deny_when`.
+- `opentelemetry` `metrics.enable_credential_attribute` (`kong.auth.credential.id`) and `client_certificate`.
+- No new auth plugin gets `principals` (still `key-auth`, `basic-auth`, `openid-connect`); route `protocols` default unchanged.
 
 ## AI Gateway 1.x (Kong Gateway + AI plugins)
 

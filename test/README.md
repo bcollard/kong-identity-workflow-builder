@@ -24,8 +24,8 @@ Terraform, lab badges, Konnect pruning) are reported as skipped when Konnect is 
 Fixtures (`fixtures/`):
 - `schemas/<target>/*.json`: `/schemas/plugins/<name>` from real containers. Refresh with `make schemas` when a version changes.
 - `kongctl-ai_gateway.schema.json`: `kongctl explain ai_gateway --output json` (version in `kongctl-version.txt`).
-  Known gaps handled in the test: `models` is exported as an empty object, `principals.match_consumer_groups` is missing,
-  and nested items don't need `ai_gateway` (all three applied fine with kongctl 1.20.1 in the lab).
+  Known gaps handled in the test: `models` is exported as an empty object, and nested items don't need `ai_gateway`
+  (both applied fine with kongctl 1.20.1 in the lab; still the case in 1.23.0).
 - `terraform-resources.txt`: resource names from the `kong/konnect` and `kong/konnect-beta` provider docs.
 
 - `aigw-entity-model.fields.json`: YAML keys of the `deck ai sync` entity model, reflected from `ai-deck-converter`
