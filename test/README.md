@@ -26,6 +26,8 @@ Fixtures (`fixtures/`):
 - `kongctl-ai_gateway.schema.json`: `kongctl explain ai_gateway --output json` (version in `kongctl-version.txt`).
   Known gaps handled in the test: `models` is exported as an empty object, and nested items don't need `ai_gateway`
   (both applied fine with kongctl 1.20.1 in the lab; still the case in 1.23.0).
+- `schemas/aigw-<version>`: AI Gateway 2.x paths are checked against the snapshot of the version they pick (2.2 or 2.3).
+  2.3-only fields on entities (Token Vault, MCP `allow_when`, `min_runtime_version`) are checked against the kongctl schema.
 - `terraform-resources.txt`: resource names from the `kong/konnect` and `kong/konnect-beta` provider docs.
 
 - `aigw-entity-model.fields.json`: YAML keys of the `deck ai sync` entity model, reflected from `ai-deck-converter`

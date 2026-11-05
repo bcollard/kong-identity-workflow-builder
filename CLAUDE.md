@@ -10,7 +10,7 @@ Read `docs/knowledge.md` (verified product facts behind every wizard rule) and `
 - Tests (`test/README.md`) load the app's script up to `/* ---------- result rendering` and walk every answer path.
   Keep pure logic (STEPS, derive, buildSeq, gen*, outputTabs) above that marker and DOM code below it. Run `npm test` before pushing;
   a schema failure means the generator emits a field Kong doesn't accept: fix the generator, not the fixture.
-- Generated config must follow Kong Gateway 3.16 / AI Gateway 2.2 field names. When adding an option, verify the field
+- Generated config must follow Kong Gateway 3.16 / AI Gateway 2.2 and 2.3 field names (2.3-only fields only when the version step says 2.3). When adding an option, verify the field
   in the Kong source or docs first; `labMatch()` badges only paths that were actually run in a lab.
 - Versioning: patch for UI and hardening changes, minor for new wizard options or outputs, major for an ID format change.
 - Actions are pinned by commit SHA and the base image by digest (Actions settings require SHA pinning); let Dependabot bump them.

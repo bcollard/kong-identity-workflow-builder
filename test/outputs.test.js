@@ -16,7 +16,7 @@ const TF_RESOURCES = new Set(fs.readFileSync(path.join(FIX, "terraform-resources
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 const validateGateway = ajv.compile(JSON.parse(fs.readFileSync(path.join(FIX, "kongctl-ai_gateway.schema.json"), "utf8")));
 
-const target = s => s.product === "ai" ? "aigw-2.2" : `gw-${s.version || "3.16"}`;
+const target = s => s.product === "ai" ? `aigw-${s.version || "2.2"}` : `gw-${s.version || "3.16"}`;
 
 /** Every plugin object in a decK file, with a readable location. */
 function deckPlugins(doc) {
@@ -69,8 +69,8 @@ test("AI Gateway 2.x auth strategies and policies match the AI Gateway 2.2 plugi
   for (const s of CLASSES.filter(c => c.product === "ai")) {
     const doc = yaml.load(render(X, s).cfg.decl.text);
     for (const gw of doc.ai_gateways || [doc]) {
-      for (const a of gw.auth_strategies || []) for (const e of checkConfig(a.type, a.config, "aigw-2.2", `auth_strategies(${a.name})`)) fail(s, e);
-      for (const p of gw.policies || []) for (const e of checkConfig(p.type, p.config, "aigw-2.2", `policies(${p.name})`)) fail(s, e);
+      for (const a of gw.auth_strategies || []) for (const e of checkConfig(a.type, a.config, target(s), `auth_strategies(${a.name})`)) fail(s, e);
+      for (const p of gw.policies || []) for (const e of checkConfig(p.type, p.config, target(s), `policies(${p.name})`)) fail(s, e);
     }
   }
   report("AI Gateway 2.2 plugin schema");

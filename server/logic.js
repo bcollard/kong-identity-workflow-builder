@@ -9,7 +9,7 @@ const MARKER = "/* ---------- result rendering";
 const VERSION_LINE = 'const APP_VERSION = "dev";';
 const RESULTS_LINE = "const E2E_RESULTS = {};";
 const RESULTS_DIR = path.join(__dirname, "../e2e/results");
-const EXPORTS = "S,STEPS,IDP,WHO,visibleSteps,prune,complete,derive,buildSeq,genDeclarative,genApi,genTf,labMatch,outputTabs,applyPlan," +
+const EXPORTS = "S,STEPS,IDP,WHO,visibleSteps,prune,legacyPayload,complete,derive,buildSeq,genDeclarative,genApi,genTf,labMatch,outputTabs,applyPlan," +
   "APP_VERSION,ID_STEPS,CODES,scenarioPayload,scenarioId,parseScenarioId,openScenario,E2E_RESULTS,outputHash,e2eStatus,highlight";
 
 /** Recorded end-to-end runs, keyed by scenario payload (newest run wins). */

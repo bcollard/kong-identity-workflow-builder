@@ -28,7 +28,7 @@ function allPaths(X) {
 }
 
 /** One representative per runtime class: analytics choices collapsed, everything else kept. */
-const CORE = ["product", "deploy", "version", "caller", "target", "cred", "idp", "record", "access"];
+const CORE = ["product", "deploy", "version", "caller", "target", "cred", "idp", "record", "access", "upstream", "provider"];
 function runtimeClasses(paths) {
   const m = new Map();
   for (const p of paths) {

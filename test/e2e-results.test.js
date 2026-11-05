@@ -15,7 +15,8 @@ test(`recorded results are well formed (${files.length})`, { skip: !files.length
     assert.equal(f, `${r.payload}.json`, `${f}: named after its payload`);
     const p = X.parseScenarioId(r.id);
     assert.ok(!p.error, `${f}: id decodes`);
-    assert.equal(X.scenarioPayload(p.state), r.payload, `${f}: payload matches the id`);
+    // IDs minted before a step existed decode to today's answers; their payload is the legacy one (AI Gateway 2.2 had no version)
+    assert.ok([X.scenarioPayload(p.state), X.legacyPayload(p.state)].includes(r.payload), `${f}: payload matches the id`);
     for (const k of ["date", "builder", "environment", "raw_generated_file"]) assert.ok(r[k], `${f}: ${k}`);
     assert.ok(Object.keys(r.hashes || {}).length, `${f}: hashes of the applied tabs`);
     assert.equal(r.passed, r.checks.filter(c => c.pass).length, `${f}: passed count`);

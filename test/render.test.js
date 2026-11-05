@@ -212,3 +212,45 @@ test("How to apply strip renders and its links switch the code tab", () => {
   }
   w.close();
 });
+
+test("multi-choice steps: hint and checkboxes, \"No plan\" moves on, other picks wait for Next", () => {
+  const w = openPage(null), doc = w.document;
+  doc.getElementById("b-reset").click();
+  const choose = lab => [...doc.querySelectorAll("#question .opt")].find(b => text(b.querySelector(".l")).startsWith(lab)).click();
+  const h2 = () => text(doc.querySelector("#question h2"));
+  choose("API Gateway"); choose("Self-managed"); choose("Kong Gateway 3.16"); choose("Apps"); choose("API keys");
+  choose("Kong Consumers"); choose("Subscription groups + ACL");
+  assert.match(h2(), /usage plans/i);
+  assert.ok(doc.querySelector("#question .opts.multi"), "multi-choice options are marked");
+  assert.match(text(doc.querySelector("#question .hint")), /Select all that apply/);
+  choose("Per-API plan · tier-CG");
+  assert.match(h2(), /usage plans/i, "a plan that can stack waits for Next");
+  assert.match(text(doc.getElementById("b-next")), /1 selected/);
+  choose("No plan");
+  assert.match(h2(), /track usage/i, "\"No plan\" moves to the next step");
+  w.close();
+});
+
+test("click through an AI Gateway 2.3 MCP server with Token Vault", { skip: !KONNECT && "Konnect control plane out of scope" }, () => {
+  const w = openPage(null), doc = w.document;
+  doc.getElementById("b-reset").click();
+  const choose = lab => {
+    const btn = [...doc.querySelectorAll("#question .opt")].find(b => text(b.querySelector(".l")).startsWith(lab));
+    assert.ok(btn, `option "${lab}" on step "${text(doc.querySelector("#question h2"))}"`);
+    assert.notEqual(btn.getAttribute("aria-disabled"), "true", `option "${lab}" is enabled`);
+    btn.click();
+  };
+  choose("AI Gateway 2.x"); choose("Konnect"); choose("AI Gateway 2.3"); choose("Employees"); choose("MCP servers");
+  choose("OIDC login"); choose("Okta"); choose("Token claims only"); choose("Any authenticated caller");
+  choose("Token Vault · each caller's own account"); choose("GitHub"); choose("No plan");
+  choose("Konnect Analytics"); doc.getElementById("b-next").click();
+  const res = doc.getElementById("result");
+  assert.equal(res.hidden, false, "result shown");
+  const code = doc.getElementById("code").textContent;
+  assert.match(code, /min_runtime_version: "2\.3"/);
+  assert.match(code, /type: token-vault/);
+  assert.match(code, /token_vault: \{ provider: github \}/);
+  assert.match(code, /enable_credential_manager: true/);
+  assert.match(text(res), /Token Vault/);
+  w.close();
+});

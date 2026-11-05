@@ -1,8 +1,8 @@
 # Knowledge behind the builder
 
-Product facts the wizard relies on. Versions: Kong Gateway 3.15 / 3.16 (incl. AI plugins, "AI Gateway 1.x"), AI Gateway 2.2, Konnect (2026-11).
+Product facts the wizard relies on. Versions: Kong Gateway 3.15 / 3.16 (incl. AI plugins, "AI Gateway 1.x"), AI Gateway 2.2 / 2.3, Konnect (2026-11).
 Checked on 2026-11-05: Kong Gateway 3.17 is not released (3.16.0.1 is the latest); AI Gateway 2.3.0 shipped on 2026-11-04
-and is the Konnect default runtime, but the builder still generates 2.2 config (see "AI Gateway 2.3" below).
+and is the Konnect default runtime. The version step picks 2.3 or 2.2 for AI Gateway 2.x.
 Each fact names its source: Kong docs (developer.konghq.com), the Kong Gateway source, the Konnect Terraform
 provider, or a lab run (`lab-verified`). Check the source before changing a rule in `site/index.html`.
 
@@ -108,7 +108,7 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 - Model and agent `access.acls` take exactly one of `allow`, `deny`, `allow_when`, `deny_when`; the CEL forms need runtime
   2.2 and can read `principal.metadata` (Kong source). kongctl declares them from 1.23.0; the builder emits `allow_when` on
   models and agents for "Principal metadata + ACL allow_when" (not run in a lab yet). MCP server ACLs accept CEL from
-  runtime 2.3 only. The `acl` policy is global-only.
+  runtime 2.3 only, so the builder offers it on MCP servers with 2.3. The `acl` policy is global-only.
 - Konnect agent `config.logging` accepts only `payloads` and `max_payload_size` (kongctl 1.23.0 schema); A2A statistics
   are logged by default (`ai-deck-converter` `DefaultLogStatistics = true`).
 - Both auth strategy types accept `config.principals` (`enabled`, `directory`, `principal_claim`, `principal_by`,
@@ -130,10 +130,12 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   so a kongctl file given to `deck ai sync` becomes an empty config. Preview the lowered config with
   `deck file ai2kong -s aigw.yaml`.
 
-## AI Gateway 2.3 (released, not targeted yet)
+## AI Gateway 2.3
 
-AI Gateway 2.3.0 shipped on 2026-11-04 (Konnect default runtime, `min_runtime_version: "2.3"` in kongctl). What it would
-change in the builder (Kong source, kongctl docs, Konnect AI Gateway OpenAPI):
+AI Gateway 2.3.0 shipped on 2026-11-04 and is the Konnect default runtime. With version 2.3 the builder sets
+`min_runtime_version: "2.3"` on the gateway (kongctl and Terraform), offers `allow_when` on MCP servers, and offers Token
+Vault upstream credentials. Not used yet (backlog): the rate-limit and expression items below. What 2.3 adds (Kong source,
+kongctl docs, Konnect AI Gateway OpenAPI):
 
 - MCP server ACLs: `access.acls`, `default_tool_acls` and per-tool ACLs accept `allow_when` / `deny_when`. A server-level
   rule takes exactly one form; a tool entry may pair `allow`+`deny` or `allow_when`+`deny_when`, not mix them. On a
@@ -149,10 +151,22 @@ change in the builder (Kong source, kongctl docs, Konnect AI Gateway OpenAPI):
 
 ## Token Vault
 
-- Konnect-only credential broker in Kong Identity: a directory with `vault_enabled: true` stores each principal's upstream
-  OAuth tokens or static secrets, envelope-encrypted to customer keys. Provider templates: GitHub, Slack, Atlassian Rovo,
-  Datadog, Google, Miro, custom OAuth, static secret. The gateway exchanges the caller's token for the upstream credential
-  (RFC 8693 token exchange); a caller who hasn't enrolled gets an enrollment URL.
+- Generally available since 2026-11-04 with AI Gateway 2.3, included with Kong Gateway subscriptions
+  (konghq.com/blog/product-releases/kong-token-vault). Docs: developer.konghq.com/identity/token-vault/.
+- Konnect-only credential broker in Kong Identity: a directory with `vault_enabled: true` stores upstream OAuth tokens or
+  static secrets, encrypted with the directory's vault public key (RSA ≥ 2048 or EC ≥ 256, up to 5 keys). The matching
+  private key stays on the data planes, so Konnect can't decrypt them. The AI Gateway exchanges the caller's token for the
+  upstream credential (RFC 8693, over mTLS) and injects it; a caller who hasn't enrolled gets an enrollment URL (valid
+  10 minutes) through virtual `authenticate` / `check_authentication_status` MCP tools. Exchanges are cached 5 minutes
+  per node, optionally in Redis.
+- Provider templates (`template_name`): `github`, `slack`, `atlassian`, `google` (OAuth app: `client_id` + `client_secret`);
+  `snowflake`, `databricks` (plus your endpoints); `atlassian-rovo`, `datadog`, `miro` (DCR, no client); `custom-oauth`
+  (client + endpoints); `static_secret` (API key stored on the provider, shared only). `credential_type`: `user` (default
+  for OAuth: each principal enrolls) or `shared` (an admin enrolls once, or stores the secret).
+- Callers are identified from a trusted IdP token (`iss` + `sub`; trusted IdP on the directory with
+  `vault_access_enabled: true`, issuer equal to the token's `iss`; principals are provisioned just in time) or from a Kong
+  Identity API key (`subject_token_type: api_key`). Consumer credentials can't be exchanged. Kong Identity auth servers
+  can be trusted IdPs.
 - Gateway side: AI Gateway 2.3 only (`ai-mcp-proxy` `auth.provider: token_vault`, plus `token-vault-exchange`,
   `token-vault-callback-handler`, `token-vault-credential-manager` plugins). Not in Kong Gateway 3.16 or 3.17.
 - Konnect entities: a `token-vault` datastore (`directory`, `current_version`, `keys` as `{vault://…}` references);
@@ -160,7 +174,12 @@ change in the builder (Kong source, kongctl docs, Konnect AI Gateway OpenAPI):
   `token_vault.enable_credential_manager` on OIDC auth strategies. kongctl docs require the datastore whenever `token_vault`
   is set; the Konnect validator and converter only when `enable_credential_manager: true`.
 - Terraform 3.28: `konnect_ai_gateway_datastore`, `konnect_identity_vault_key`, `_vault_provider`, `_vault_provider_credential`.
-- The Konnect admin endpoints and UI are still behind a feature flag (2026-11): not generally available.
+- The entity docs show `config.upstream.auth: {type: token_vault, token_vault: {directory, provider}}` on MCP servers,
+  while the Konnect API (and kongctl 1.23) put `token_vault` and `datastores` on the MCP server entity. The builder follows
+  the API, which the kongctl schema validates. The 2.3 `ai-mcp-proxy` plugin schema (`schemas/aigw-2.3`) carries the lowered
+  form: `auth.provider: token_vault` and `auth.token_vault {directory, provider, subject_token_type (access_token | api_key),
+  storage {backend: konnect, current_version, keys}, cache.redis, credential.inbound/outbound}`. When `subject_token_type` is
+  unset the plugin infers it: a JWS is an access token, anything else an API key.
 
 ## Kong Operator
 

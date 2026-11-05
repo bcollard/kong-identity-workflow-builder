@@ -31,3 +31,4 @@ dump() { # name image plugins...   (ONLY=<name> refreshes a single target)
 dump gw-3.16 kong/kong-gateway:3.16.0.0 $PLUGINS_GW
 dump gw-3.15 kong/kong-gateway:3.15.0.6 $PLUGINS_GW
 dump aigw-2.2 kong/kong-ai-gateway:2.2.0 $PLUGINS_AIGW
+dump aigw-2.3 kong/kong-ai-gateway:2.3.0 $PLUGINS_AIGW

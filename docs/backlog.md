@@ -25,12 +25,14 @@ on Consumers) and API Gateway on Konnect (Kong Identity apps with principals). R
   (Keycloak standing in), and self-managed AI Gateway 2.x (`deck ai sync`).
 - Bulk: `deck gateway validate --online` on every runtime class.
 
-## Target AI Gateway 2.3
+## AI Gateway 2.3
 
-2.3.0 is released and the Konnect default (see `docs/knowledge.md`). Moving the AI Gateway 2.x product to it means new
-plugin schema snapshots (`make schemas`), a converter pin for the `deck ai sync` test, and then:
+The version step offers 2.3 (since v1.8.0): MCP `allow_when` and Token Vault use it. Still to do:
 
-- MCP servers: enable "Principal metadata + ACL allow_when" (server-level `allow_when`), and tool ACLs with CEL.
+- Lab runs: Token Vault per-user (Okta or Keycloak, GitHub) and shared static secret; MCP `allow_when`.
+- Token Vault for model providers (`token_vault` on `model_providers`), selectors on shared credentials (one key per team),
+  several upstream MCP servers behind one `listener`, Redis credential cache.
+- MCP tool ACLs with CEL.
 - LLM token budgets per principal (`match: {type: principal, partition_by: true}`) and per-tier limits read from principal
   metadata (`key: metadata.<name>`), without tier-CGs.
 - MCP hit limits with the native `rate_limiting` block (per tool or method) next to `rate-limiting-advanced`.
@@ -43,7 +45,6 @@ plugin schema snapshots (`make schemas`), a converter pin for the `deck ai sync`
 | Several caller populations on one AI model | One `openid-connect` strategy per model: generate `issuers_allowed` + `extra_jwks_uris` on it, with a claim unique across issuers, or a second model per issuer |
 | Token exchange / on-behalf-of (RFC 8693, actor token) | Agents acting for a user; `openid-connect` token exchange and `ai-mcp-oauth2` token exchange |
 | MCP OAuth (`ai-mcp-oauth2`) | MCP clients discovering the auth server through protected-resource metadata (`openid-connect` `protected_resource_metadata`, 3.16 / AI Gateway 2.3) |
-| Upstream credentials per caller (Token Vault) | MCP servers calling GitHub, Slack… with each user's own token. Wait until Token Vault is generally available |
 | Principal groups and trusted IdPs | Kong Identity groups (`principal.groups` in CEL, 3.17 / AI Gateway 2.3) could replace sub-CGs in metadata; trusted IdPs JIT-provision principals |
 | Kong Operator manifests | `AIGateway*` CRDs could fill a Kubernetes tab for AI Gateway 2.x; there are no Kong Identity CRDs |
 | mTLS clients | Certificate-bound callers; principal identity by certificate |

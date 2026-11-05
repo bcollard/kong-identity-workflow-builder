@@ -51,7 +51,7 @@ function checkRecord(v, def, p, errs) {
 const ENTITY_KEYS_DECK = new Set(["name", "config", "condition", "expressions", "enabled", "protocols", "tags",
   "instance_name", "ordering", "route", "service", "consumer", "consumer_group"]);
 
-/** Validate a decK-style plugin object. target: gw-3.16 | gw-3.15 | aigw-2.2 */
+/** Validate a decK-style plugin object. target: gw-3.16 | gw-3.15 | aigw-2.2 | aigw-2.3 */
 function checkPlugin(plugin, target, where) {
   const errs = [];
   const sch = schema(target, plugin.name);

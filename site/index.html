@@ -83,6 +83,9 @@ button:focus-visible,.opt:focus-visible{outline:2px solid var(--accent);outline-
 .opt[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 16px var(--accent-soft);background:var(--accent-soft)}
 .opt[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
 .opt .why{font-size:12px;color:var(--warn)}
+.opts.multi .opt .l::before{content:"";flex:none;width:15px;height:15px;border:1.5px solid var(--muted);border-radius:4px;box-sizing:border-box}
+.opts.multi .opt[aria-pressed="true"] .l::before{content:"✓";border-color:var(--accent);background:var(--accent);color:var(--bg);font-size:11px;line-height:12px;text-align:center}
+.hint{font-size:13px;color:var(--accent-text);margin:0}
 .tag{font:700 10px/1 var(--display);letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:4px 7px;border:1px solid var(--cross);color:var(--muted)}
 .tag.rec{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .tag.nocg{color:var(--ok);border-color:var(--ok)}
@@ -186,7 +189,7 @@ footer{color:var(--muted);font-size:12px}
 <div class="wrap">
   <header class="top">
     <div>
-      <span class="eyebrow">Kong Gateway 3.16 · AI Gateway 2.2 · Kong Identity</span>
+      <span class="eyebrow">Kong Gateway 3.16 · AI Gateway 2.3 · Kong Identity</span>
       <h1>Identity Workflow Builder</h1>
       <p class="lede">Answer a few questions about who calls your gateway. The builder works out where identities and groups live, which Consumer Groups you really need, and generates the sequence, the config and the analytics plan.</p>
     </div>
@@ -206,7 +209,7 @@ footer{color:var(--muted);font-size:12px}
 
   <section class="res" id="result" hidden></section>
 
-  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 and the Konnect Terraform provider. Paths marked "Tested end to end" had these exact files applied to a running gateway and checked; the others are generated drafts. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a>. Community project, not an official Kong product.</footer>
+  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 / 2.3 and the Konnect Terraform provider. Paths marked "Tested end to end" had these exact files applied to a running gateway and checked; the others are generated drafts. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a>. Community project, not an official Kong product.</footer>
   <div class="consent" id="consent" role="region" aria-label="Analytics consent" hidden>
     <span>This site uses Google Analytics cookies to count visits and popular scenarios. Nothing is sent about your answers beyond the page address.</span>
     <div><button class="btn" id="c-decline">Decline</button><button class="btn primary" id="c-accept">Accept</button></div>
@@ -235,24 +238,38 @@ const WHO = {
 };
 
 /* ---------- wizard definition ---------- */
-const S = {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]};
+const S = {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null};
 const isAI = s=>s.product==="ai";            // AI Gateway 2.x entity model
 const isAI1 = s=>s.product==="ai1";          // AI Gateway 1.x: Kong Gateway + AI plugins
 const isAIany = s=>isAI(s)||isAI1(s);
 const gw316 = s=>s.version!=="3.15";
+const aigw23 = s=>isAI(s)&&s.version==="2.3";   // AI Gateway 2.3 runtime (2.2 otherwise)
+const vaultOn = s=>/^vault-/.test(s.upstream||"");
+/** Token Vault provider templates (Kong Identity). auth: client = OAuth app you own, dcr = registered on first use, static = shared secret. */
+const VAULT = {
+  "github":{label:"GitHub",tpl:"github",auth:"client",slug:"github"},
+  "slack":{label:"Slack",tpl:"slack",auth:"client",slug:"slack"},
+  "atlassian-rovo":{label:"Atlassian Rovo",tpl:"atlassian-rovo",auth:"dcr",slug:"atlassian"},
+  "google":{label:"Google",tpl:"google",auth:"client",slug:"google"},
+  "datadog":{label:"Datadog",tpl:"datadog",auth:"dcr",slug:"datadog"},
+  "custom-oauth":{label:"Other OAuth service",tpl:"custom-oauth",auth:"custom",slug:"internal"},
+  "static_secret":{label:"API key or token",tpl:"static_secret",auth:"static",slug:"internal"}};
 const oidcLike = s=>s.cred==="oidc"||s.cred==="cc";
+const d0issuer = s => s.idp ? IDP[s.idp].issuer : "";
 /** rate-limiting-advanced identifier for a per-caller limit: the Consumer, the 3.16 principal, or the (virtual) credential. */
 const hitIdentifier = s=>s.record==="consumers"?"consumer":(s.record==="principals"&&!isAI(s)&&gw316(s))?"principal":"credential";
 
 const STEPS = [
  {id:"product",title:"Product",ask:"Which gateway receives the calls?",options:s=>[
    {v:"api",label:"API Gateway",s:"REST/gRPC APIs on Kong Gateway 3.16",ex:"services · routes · plugins"},
-   {v:"ai",label:"AI Gateway 2.x",s:"LLMs, A2A agents and MCP servers with the AI Gateway entity model (2.2)",ex:"models · agents · auth strategies · policies"},
+   {v:"ai",label:"AI Gateway 2.x",s:"LLMs, A2A agents and MCP servers with the AI Gateway entity model (2.2, 2.3)",ex:"models · agents · auth strategies · policies"},
    {v:"ai1",label:"AI Gateway 1.x",s:"Kong Gateway 3.15 / 3.16 with AI plugins on services and routes",ex:"ai-proxy-advanced · ai-a2a-proxy · ai-mcp-proxy"}]},
  {id:"deploy",title:"Control plane",ask:"Where is the control plane?",help:s=>"<b>Kong Identity principals</b> are stored in a Konnect directory and looked up by Konnect-connected data planes only. A self-managed control plane can still validate Kong Identity tokens as a plain OIDC issuer.",options:s=>[
    {v:"konnect",label:"Konnect",s:"Hybrid or dedicated cloud data planes",tag:"rec",tagText:"Recommended"},
    {v:"self",label:"Self-managed",s:isAI(s)?"AI Gateway entities applied with deck ai sync or the AI Manager UI":"Kong Gateway with its own control plane (decK, Admin API, KIC)"}]},
- {id:"version",title:"Gateway version",ask:"Which Kong Gateway version runs the data planes?",visible:s=>!isAI(s),help:s=>"3.16 adds ACL <b>allow_when</b>, plugin <b>expressions</b> (limits read from principal metadata), <b>principal</b> rate-limit identifiers and OpenTelemetry principal attributes. Principals themselves need 3.15.",options:s=>[
+ {id:"version",title:"Gateway version",ask:"Which version runs the data planes?",help:s=>isAI(s)?"2.3 adds <b>Token Vault</b> upstream credentials and CEL <b>allow_when</b> ACLs on MCP servers. Token Vault is Konnect only.":"3.16 adds ACL <b>allow_when</b>, plugin <b>expressions</b> (limits read from principal metadata), <b>principal</b> rate-limit identifiers and OpenTelemetry principal attributes. Principals themselves need 3.15.",options:s=>isAI(s)?[
+   {v:"2.3",label:"AI Gateway 2.3",s:"Token Vault for MCP upstreams, allow_when on MCP servers",tag:"rec",tagText:"Recommended"},
+   {v:"2.2",label:"AI Gateway 2.2",s:"Auth strategies, principals, CEL ACLs on models and agents"}]:[
    {v:"3.16",label:"Kong Gateway 3.16",s:"Principals with metadata-driven ACLs and limits",tag:"rec",tagText:"Recommended"},
    {v:"3.15",label:"Kong Gateway 3.15",s:"Principals for authentication and attribution; groups still carry ACLs and limits"}]},
  {id:"caller",title:"Who calls",ask:"Who authenticates to the gateway?",options:s=>[
@@ -301,10 +318,22 @@ const STEPS = [
    {v:"none",label:"Any authenticated caller",s:"No per-resource subscription.",tag:"nocg",tagText:"No CG"},
    {v:"subcg",label:"Subscription groups + ACL",s:`One sub-CG per ${(ai||ai1)?(s.target==="models"?"model":s.target==="a2a"?"agent":"MCP server"):"API"}. Membership from ${subSrc}.`,tag:"cg",tagText:"sub-CG"},
    {v:"meta",label:"Principal metadata + ACL allow_when",s:"<code>allow_when: '\"orders-api\" in principal.metadata.subscriptions'</code>",tag:"nocg",tagText:"No CG",
-     disabled:!pr?"Needs Kong Identity principals.":ai?(s.target==="mcp"?"MCP server ACLs accept allow_when from AI Gateway 2.3. The builder targets 2.2: use subscription groups.":null):!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
+     disabled:!pr?"Needs Kong Identity principals.":ai?(s.target==="mcp"&&!aigw23(s)?"MCP server ACLs accept allow_when from AI Gateway 2.3.":null):!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
    {v:"claimacl",label:"Groups claim + ACL",s:(ai||ai1)&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
      disabled:!cl?"Needs token claims as the identity record.":(ai&&s.target!=="mcp")?"AI Gateway auth strategies don't document authenticated_groups_claim (it is only passed through to the plugin, untested). Use subscription groups.":null}];
  }},
+ {id:"upstream",title:"Upstream auth",ask:"How does the gateway authenticate to the MCP server's upstream?",visible:s=>isAI(s)&&s.target==="mcp",help:s=>"<b>Token Vault</b> (Kong Identity) stores upstream credentials for GitHub, Slack and other services. The AI Gateway exchanges the caller's token for the matching credential and injects it: the caller and its agent never hold it.",options:s=>{
+   const why=!aigw23(s)?"Token Vault needs AI Gateway 2.3.":s.deploy!=="konnect"?"Token Vault is Konnect only.":(s.cred==="apikey"&&s.record!=="principals")?"Token Vault exchanges an IdP token or a Kong Identity API key. Consumer keys can't be exchanged: pick principals.":null;
+   return [
+   {v:"none",label:"No upstream credential",s:"The gateway forwards the call as is. The MCP server is open to the gateway or handles its own auth."},
+   {v:"vault-user",label:"Token Vault · each caller's own account",s:"Per-user OAuth: each caller enrolls once on the service's consent screen, then the gateway uses their own token. The service sees who is calling.",tag:"rec",tagText:"Recommended",disabled:why,
+     why:s.caller!=="employees"?"Someone completes the OAuth consent once for each app or agent.":null},
+   {v:"vault-shared",label:"Token Vault · one shared account",s:"An admin enrolls one OAuth account or stores one API key. Every authorized caller uses it.",disabled:why}];
+ }},
+ {id:"provider",title:"Upstream service",ask:"Which service does the MCP server call?",visible:s=>isAI(s)&&s.target==="mcp"&&vaultOn(s),help:s=>"Each service is a Token Vault provider built from a template. One provider per MCP server.",options:s=>Object.entries(VAULT).map(([k,v])=>({v:k,label:v.label,
+   s:v.auth==="client"?"OAuth app you register in the service (client ID and secret).":v.auth==="dcr"?"No OAuth app to register: Token Vault registers itself (DCR) on first use.":v.auth==="custom"?"Any OAuth authorization-code service: client ID, secret and endpoints.":"A pre-issued API key or token, stored once for the whole directory.",
+   ex:`template_name: ${v.tpl}`,
+   disabled:(v.auth==="static"&&s.upstream==="vault-user")?"A stored API key is a shared credential: pick \"one shared account\".":null}))},
  {id:"plans",title:"Usage plans",multi:true,ask:"Which usage plans apply? Pick several if they stack.",help:s=>isAIany(s)?"LLM token budgets are owned by the <b>AI team</b>.":"Per-API plans are owned by the <b>API owner</b>, BU-wide plans by the <b>org admin</b>. They use different plugins, so both apply to one caller.",options:s=>{
    const ai=isAI(s), ai1=isAI1(s), pr=s.record==="principals";
    if(ai1) return [
@@ -320,7 +349,7 @@ const STEPS = [
    if(ai) return [
      {v:"none",label:"No plan",s:"Only access control."},
      {v:"llm",label:"LLM token budget per tier",s:"Global ai-rate-limiting-advanced, rules per tier-CG, one counter per caller credential.",tag:"cg",tagText:"tier-CG",
-      disabled:s.target!=="models"?"AI rate limiting isn't available on agents or MCP servers in 2.2.":null},
+      disabled:s.target!=="models"?"AI rate limiting isn't available on agents or MCP servers (2.2 and 2.3).":null},
      {v:"mcp-hits",label:"Hit limit on the MCP path",s:"rate-limiting-advanced per caller on the MCP route. It counts every MCP message (initialize, tools/list, notifications, tools/call), so size the limit for whole sessions.",tag:"nocg",tagText:"No CG",
       disabled:s.target!=="mcp"?"MCP servers only.":null}];
    return [
@@ -379,9 +408,10 @@ function renderQuestion(){
   const opts=st.options(S), vs=visibleSteps(), idx=vs.findIndex(s=>s.id===cur);
   q.innerHTML=`<div><span class="eyebrow">Step ${idx+1} of ${vs.length}</span><h2>${st.ask}</h2></div>
     ${st.help?`<p class="help">${st.help(S)}</p>`:""}
-    <div class="opts" role="${st.multi?"group":"radiogroup"}" aria-label="${st.title}"></div>
+    ${st.multi?`<p class="hint">Select all that apply, then ${idx===vs.length-1?"Build the workflow":"Next"}.</p>`:""}
+    <div class="opts${st.multi?" multi":""}" role="${st.multi?"group":"radiogroup"}" aria-label="${st.title}"></div>
     <div class="nav"><button class="btn" id="b-back" ${idx===0?"disabled":""}>Back</button><span class="sp"></span>
-      <button class="btn primary" id="b-next" ${answered(st)?"":"disabled"}>${idx===vs.length-1?"Build the workflow":"Next"}</button></div>`;
+      <button class="btn primary" id="b-next" ${answered(st)?"":"disabled"}>${idx===vs.length-1?"Build the workflow":"Next"}${st.multi&&S[st.id].length&&!S[st.id].includes("none")?` · ${S[st.id].length} selected`:""}</button></div>`;
   const box=q.querySelector(".opts");
   opts.forEach(o=>{
     const sel=st.multi?S[st.id].includes(o.v):S[st.id]===o.v;
@@ -393,7 +423,8 @@ function renderQuestion(){
       if(st.multi){ let a=S[st.id]; if(o.v==="none") a=a.includes("none")?[]:["none"]; else { a=a.filter(x=>x!=="none"); a=a.includes(o.v)?a.filter(x=>x!==o.v):[...a,o.v]; } S[st.id]=a; }
       else S[st.id]=o.v;
       prune(); render();
-      if(!st.multi){ const n=vs[idx+1]; if(n&&STEPS.find(s=>s.id===n.id)) { cur=visibleSteps()[visibleSteps().findIndex(s=>s.id===st.id)+1]?.id||cur; render(); } }
+      const done = !st.multi || (o.v==="none" && S[st.id].includes("none"));   // "No plan" excludes every other choice: nothing left to pick
+      if(done){ const n=vs[idx+1]; if(n&&STEPS.find(s=>s.id===n.id)) { cur=visibleSteps()[visibleSteps().findIndex(s=>s.id===st.id)+1]?.id||cur; render(); } }
     };
     box.appendChild(b);
   });
@@ -426,6 +457,11 @@ function derive(s){
   const ai=isAI(s), ai1=isAI1(s), aiAny=ai||ai1, pr=s.record==="principals", cl=s.record==="claims", co=s.record==="consumers";
   const who=WHO[s.caller]||WHO.apps, idp=IDP[s.idp];
   const tgt=aiAny?(s.target==="models"?{kind:"model",name:"gpt-large",sub:"ai-sub-gpt-large"}:s.target==="a2a"?{kind:"agent",name:"kongair",sub:"a2a-sub-kongair"}:{kind:"MCP server",name:"github-tools",sub:"mcp-sub-github"}):{kind:"API",name:"orders-api",sub:"sub-orders-api"};
+  const vp = ai&&vaultOn(s)&&VAULT[s.provider] ? VAULT[s.provider] : null;
+  if(vp && s.target==="mcp"){ tgt.name=`${vp.slug}-tools`; tgt.sub=`mcp-sub-${vp.slug}`; }
+  // Token Vault: provider named after the service; the caller's token (or Kong Identity API key) is the subject token
+  const vault = vp ? {mode:s.upstream==="vault-user"?"user":"shared", prov:s.provider, tpl:vp.tpl, auth:vp.auth, label:vp.label,
+    name:`${vp.slug}${vp.auth==="static"?"-key":""}`, subject:s.cred==="apikey"?"api_key":"access_token"} : null;
   const credClaim = cl||pr ? (idp?(s.caller==="employees"?idp.user:idp.app):null) : null;
   const groups=[], meta={}, warns=[], notes=[];
   const memb = pr?"principal metadata consumer_groups":cl?`${idp?idp.groups:"groups"} claim`:"Consumer membership";
@@ -448,7 +484,16 @@ function derive(s){
   // warnings
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model, agent or MCP server. Several issuers: list them on that strategy (issuers_allowed + extra_jwks_uris) and map callers on a claim unique across issuers, or give the other issuer its own model.");
   if(!ai && gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
-  if(ai && s.access==="meta") notes.push(`${tgt.kind==="model"?"Model":"Agent"} access.acls.allow_when needs kongctl 1.23+ (AI Gateway runtime 2.2+). One rule type per ACL: allow_when replaces allow.`);
+  if(vault){
+    notes.push(`Token Vault releases the ${vault.label} credential to the AI Gateway only (mTLS); the caller and its agent never see it.`);
+    if(vault.mode==="user") notes.push("A caller who hasn't enrolled sees virtual authenticate and check_authentication_status tools with an enrollment URL (valid 10 minutes). The real tools appear after enrollment.");
+    if(vault.subject==="access_token") warns.push(`Token Vault only accepts tokens from a trusted IdP on the directory with vault_access_enabled: true. Its issuer_url must match the token's iss exactly (${d0issuer(s)}).`);
+    warns.push("Keep the vault private key on the data planes only (vault reference in the token-vault datastore). Konnect keeps the public key and can't decrypt stored credentials. Generated config never contains the key.");
+    if(vault.mode==="user" && s.cred!=="apikey") notes.push("Enrollment protection (token_vault on the openid-connect auth strategy) makes callers sign in before they authorize an upstream account, so an enrollment link can't store someone else's credential.");
+    if(vault.mode==="user" && s.cred==="apikey") warns.push("Enrollment protection needs an openid-connect auth strategy: with API keys, anyone holding an enrollment link can complete it.");
+  }
+  if(ai && s.target==="mcp" && s.access==="meta") notes.push("On a passthrough-listener MCP server, a server-level allow_when gates the tools, not the MCP connection itself.");
+  if(ai && s.access==="meta") notes.push(`${tgt.kind==="model"?"Model":tgt.kind==="agent"?"Agent":"MCP server"} access.acls.allow_when needs kongctl 1.23+ (AI Gateway runtime ${s.target==="mcp"?"2.3":"2.2"}+). One rule type per ACL: allow_when replaces allow.`);
   if(ai) warns.push(s.access==="subcg"||s.access==="meta"
     ? "AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first."
     : "AI Gateway answers 401 for a missing or unknown token: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
@@ -474,7 +519,7 @@ function derive(s){
   if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:ai?"prometheus policy (AI metrics) + http-log → Vector → Prometheus for identity labels":ai1?"prometheus plugin (ai_metrics: true) + http-log → Vector for identity labels":"prometheus plugin + http-log (custom_fields_by_lua) → Vector log_to_metric",dims:aiAny?"model, provider, tokens; caller and BU via the log pipeline":"service, route, status; caller and BU via the log pipeline"});
   if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin/policy → collector",dims:!ai&&pr&&gw316(s)?`kong.auth.principal.display_name on request counts${ai1?", gen_ai.* metrics":""}`:aiAny?"gen_ai.* metrics, traces":"traces, request metrics"});
   if(buDim && pr && !groups.some(g=>g.kind==="bu"||g.name.startsWith("bu-"))) notes.push("Principal metadata isn't an analytics dimension: keep a BU group or a log label to report by BU.");
-  return {ai,ai1,aiAny,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans};
+  return {ai,ai1,aiAny,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans,vault};
 }
 
 /* lab-validated combinations */
@@ -555,6 +600,7 @@ function buildSeq(s,d){
   lanes.push(...rl);
   if(ai) lanes.push(s.target==="models"?L("px","ai-proxy-adv","model route","plugin"):s.target==="a2a"?L("px","ai-a2a-proxy","A2A","plugin"):L("px","ai-mcp-proxy","MCP","plugin"));
   if(ai&&s.target==="a2a") lanes.push(L("post","post-function","skill trim","plugin"));
+  if(d.vault) lanes.push(L("tv","Token Vault","Kong Identity","store"));
   lanes.push(L("up",ai?(s.target==="models"?"LLM":s.target==="a2a"?"Remote agent":"MCP server"):d.tgt.name,"upstream","upstream"));
   const claimsTxt = ()=>{ const g=d.idp?d.idp.groups:"groups"; const cc=d.credClaim||"sub";
     const gl=d.cl?`\n${g}: [${d.groups.map(x=>x.name).join(", ")}]`:""; return `iss: ${d.idp?d.idp.issuer:""}\n${cc}: ${s.caller==="employees"?who.name:"<client_id>"}${gl}`; };
@@ -594,14 +640,18 @@ function buildSeq(s,d){
       steps.push({f:"post",t:"c",l:"trimmed card",h:"The caller sees what it may use",p:""});
     } else {
       if(mcpToolAcl) steps.push({f:"px",t:"px",l:s.access==="claimacl"?`tool ACL from .${d.idp.groups} claim ✓`:`tool ACL allow [${d.tgt.sub}] ✓`,h:"Tool-level access",p:"ai-mcp-proxy filters tools/list and rejects tools/call for tools the caller may not use.",set:{decision:"tool ACL: allowed"}});
-      steps.push({f:"px",t:"up",l:s.target==="models"?"chat completion":"tools/call",h:"Upstream call",p:s.target==="models"?"Provider key injected by the gateway.":"Tool-level ACLs filter tools/list and tools/call."});
+      if(d.vault){
+        steps.push({f:"px",t:"tv",l:`token exchange (${d.vault.subject}) · ${d.vault.name}`,h:"Upstream credential request",p:`RFC 8693 exchange over mTLS. Token Vault identifies the caller from the ${d.vault.subject==="api_key"?"Kong Identity API key":"token's iss and sub"}. Cached up to 5 minutes.`});
+        steps.push({f:"tv",t:"px",l:d.vault.mode==="user"?`${who.name}'s ${d.vault.label} token`:`shared ${d.vault.label} credential`,h:d.vault.mode==="user"?"The caller's own credential":"The directory's shared credential",p:d.vault.mode==="user"?"First call: an enrollment URL instead, served as a virtual authenticate tool.":"Enrolled or stored once by an admin.",set:{decision:`token vault: ${d.vault.name} credential released`}});
+      }
+      steps.push({f:"px",t:"up",l:s.target==="models"?"chat completion":"tools/call",h:"Upstream call",p:s.target==="models"?"Provider key injected by the gateway.":d.vault?`${d.vault.label} credential injected by the gateway.`:"Tool-level ACLs filter tools/list and tools/call."});
       steps.push({f:"up",t:"c",l:"200 OK",h:"Response",p:""});
     }
   } else steps.push({f:"up",t:"c",l:"200 OK",h:"Response",p:""});
   const lastSet = d.an.length?{analytics:d.an.map(a=>`${a.tool}: ${a.dims}`).join("\n")}:null;
   if(lastSet) steps[steps.length-1].set=Object.assign({},steps[steps.length-1].set||{},lastSet);
   steps[steps.length-1].p = steps[steps.length-1].p || "Usage is attributed without a Consumer when the record is claims or principals.";
-  const band = d.ai?`KONG AI GATEWAY 2.2 · ${d.tgt.kind.toUpperCase()} ${d.tgt.name}`:d.ai1?`KONG GATEWAY ${ver} + AI PLUGINS · ${d.tgt.kind.toUpperCase()} ROUTE ${d.tgt.name}`:`KONG GATEWAY ${ver} · SERVICE ${d.tgt.name}`;
+  const band = d.ai?`KONG AI GATEWAY ${s.version||"2.2"} · ${d.tgt.kind.toUpperCase()} ${d.tgt.name}`:d.ai1?`KONG GATEWAY ${ver} + AI PLUGINS · ${d.tgt.kind.toUpperCase()} ROUTE ${d.tgt.name}`:`KONG GATEWAY ${ver} · SERVICE ${d.tgt.name}`;
   return {lanes,steps,band};
 }
 
@@ -722,7 +772,9 @@ function genDeclarative(s,d){
       auth_methods: [bearer]
       audience_required: [kong-gateway]
 ${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim: [${d.idp.groups}]\n      consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${d.co?`      consumer_claims: [[${d.credClaim||"sub"}]]\n      consumer_by: [custom_id]\n`:""}${d.pr?`      principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}      cache_tokens_salt: change-me
-      ssl_verify: true`
+      ssl_verify: true${d.vault&&d.vault.mode==="user"?`
+    token_vault: { enable_credential_manager: true }   # enrollment protection + self-service connectors page
+    datastores: [{ name: token-vault }]`:""}`
       : `  - ref: ${s.caller}-keys
     name: ${s.caller}-keys
     display_name: ${WHO[s.caller].label} API keys
@@ -767,6 +819,7 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
     const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`
       :s.access==="meta"?`, acls: { allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions'] }`:"";
     const stratName = d.auth.plugin==="openid-connect"?`${s.caller}-auth`:`${s.caller}-keys`;
+    const mcpSlug = d.tgt.name.replace(/-tools$/,"");
     let ent;
     if(s.target==="models") ent=`    models:
       - ref: ${d.tgt.name}
@@ -791,11 +844,14 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
         name: ${d.tgt.name}
         display_name: ${d.tgt.name}
         type: passthrough-listener
-        config: { url: https://mcp.github.example/mcp, route: { paths: [/mcp/github] } }
+        config: { url: https://mcp.${mcpSlug}.example/mcp, route: { paths: [/mcp/${mcpSlug}] } }${d.vault?`
+        datastores: [{ name: token-vault }]
+        token_vault: { provider: ${d.vault.name}${d.vault.subject==="api_key"?", subject_token_type: api_key":""} }   # ${d.vault.mode==="user"?"each caller's own":"shared"} ${d.vault.label} credential`:""}
         access:
           auth_strategies: [${stratName}]
           acl_attribute_type: ${s.access==="claimacl"?"oauth_access_token":"consumer"}${s.access==="subcg"?`
-          acls: { allow: [${d.tgt.sub}] }`:""}${s.access==="claimacl"?`
+          acls: { allow: [${d.tgt.sub}] }`:""}${s.access==="meta"?`
+          acls: { allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions'] }`:""}${s.access==="claimacl"?`
           access_token_claim_field: .${d.idp.groups}
           default_tool_acls: { allow: [${d.tgt.name}-users] }`:""}${d.plans.includes("mcp-hits")?`
         policies: [mcp-hit-limit]`:""}`;
@@ -827,7 +883,16 @@ ai_gateways:
   - ref: aigw
     name: acme-aigw
     display_name: ACME AI Gateway
-${s.target==="models"?`    model_providers:
+${aigw23(s)?`    min_runtime_version: "2.3"\n`:""}${d.vault?`    datastores:
+      - ref: token-vault
+        name: token-vault
+        display_name: Token Vault
+        type: token-vault
+        config:
+          directory: default
+          current_version: v1
+          keys: [{ version: v1, key: "{vault://env/token-vault-key-v1}" }]   # TOKEN_VAULT_KEY_V1 = vault-private.pem on the data planes
+`:""}${s.target==="models"?`    model_providers:
       - ref: openai
         name: openai
         display_name: OpenAI
@@ -885,6 +950,12 @@ const API_TAGS=[
   [/^# Kong Identity auth server, scope and client/, "tf:konnect_identity_auth_server, konnect_identity_auth_server_scope, konnect_identity_auth_server_client"],
   [/^# (Claim templated|Groups claim templated)/, "tf:konnect_identity_auth_server_claim"],
   [/^# Directory/, "tf:konnect_identity_directory"],
+  [/^# Token Vault: enable/, "tf:konnect_identity_directory (vault_enabled)"],
+  [/^# Vault key/, "tf:konnect_identity_vault_key"],
+  [/^# Trusted IdP/, "tf:konnect_identity_trusted_idp"],
+  [/^# Token Vault provider/, "tf:konnect_identity_vault_provider"],
+  [/^# Shared credential: store/, "tf:konnect_identity_vault_provider_credential"],
+  [/^# Shared credential: admin enrollment/, "api"],
   [/^# Principal/, "tf:konnect_identity_principal"],
   [/^# API key, generated/, "tf:konnect_identity_principal_api_key (type imported: Terraform can't read back a generated key)"],
   [/^# Link the/, "tf:konnect_identity_principal_identity"],
@@ -937,6 +1008,32 @@ curl -s -X PUT $KONNECT_API/v3/apis/$API/publications/$PORTAL -H "$H" -H 'conten
 curl -s "$KONNECT_API/v3/portals/$PORTAL/applications?filter%5Bname%5D%5Beq%5D=${d.who.name}" -H "$H" | jq -r '.data[0].id'`);
   return {lang:"bash",title:"Konnect API",text:o.join("\n\n").split(/\n\n(?=# )/).map(tagApiBlock).join("\n\n")};
 }
+/** Token Vault setup on the directory: enable, vault key, trusted IdP, provider, shared credential. */
+function apiVault(s,d){
+  const v=d.vault, out=[], j=o=>JSON.stringify(o);
+  out.push(`# Token Vault: enable it on the directory
+curl -s -X PATCH $KONNECT_API/v2/directories/$DIR -H "$H" -H 'content-type: application/json' -d '{"vault_enabled":true}'`);
+  out.push(`# Vault key: Konnect keeps the public half, the data planes keep vault-private.pem (never commit it)
+openssl genrsa -out vault-private.pem 2048 && openssl rsa -in vault-private.pem -pubout -out vault-public.pem
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/vault/keys -H "$H" -H 'content-type: application/json' \\
+  -d "$(jq -n --rawfile k vault-public.pem '{name:"v1",public_key:$k}')"`);
+  if(v.subject==="access_token") out.push(`# Trusted IdP: Token Vault accepts tokens from this issuer (must equal the token's iss)
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/trusted-idps -H "$H" -H 'content-type: application/json' \\
+  -d '{"issuer_url":"${s.idp==="ki"?"'$ISSUER'":d.idp.issuer}","display_name":"${d.idp.label}","vault_access_enabled":true}'`);
+  const body={template_name:v.tpl,name:v.name};
+  if(v.auth==="client"||v.auth==="custom") Object.assign(body,{client_id:"<oauth app client id>",client_secret:"<oauth app client secret>"});
+  if(v.auth==="custom") Object.assign(body,{authorization_endpoint:"https://auth.internal.example/authorize",token_endpoint:"https://auth.internal.example/token"});
+  if(v.mode==="shared") body.credential_type="shared";
+  out.push(`# Token Vault provider (${v.label}${v.auth==="dcr"?": registered with DCR on first use":""})
+PROV=$(curl -s -X POST $KONNECT_API/v2/directories/$DIR/vault/providers -H "$H" -H 'content-type: application/json' \\
+  -d '${j(body)}' | jq -r .id)`);
+  if(v.auth==="static") out.push(`# Shared credential: store the API key (encrypted with the vault key)
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/vault/providers/$PROV/credentials -H "$H" -H 'content-type: application/json' \\
+  -d '{"secret":"'$UPSTREAM_API_KEY'"}'`);
+  else if(v.mode==="shared") out.push(`# Shared credential: admin enrollment (open the URL once and authorize the shared ${v.label} account)
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/vault/providers/$PROV/credentials -H "$H" -H 'content-type: application/json' -d '{}' | jq -r .enrollment_url`);
+  return out;
+}
 function genApi(s,d){
   if(d.portal) return genApiPortal(s,d);
   const out=[];
@@ -963,12 +1060,12 @@ curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/claims -H "$H" -H 'content-type
   -d '{"name":"groups","value":"\${ .Client.Labels.groups | default \\"\\" | splitList \\".\\" | toJson }",
        "include_in_token":true,"include_in_all_scopes":true,"enabled":true}'`);
   }
-  if(d.pr){
-    out.push(`# Directory (one per region; reuse it if it exists)
+  if(d.pr||d.vault) out.push(`# Directory (one per region; reuse it if it exists)
 DIR=$(curl -s $KONNECT_API/v2/directories -H "$H" | jq -r '.data[0].id // empty')
 [ -n "$DIR" ] || DIR=$(curl -s -X POST $KONNECT_API/v2/directories -H "$H" -H 'content-type: application/json' \\
-  -d '{"name":"default","allow_all_control_planes":true}' | jq -r .id)
-
+  -d '{"name":"default","allow_all_control_planes":true}' | jq -r .id)`);
+  if(d.pr){
+    out.push(`
 # Principal (identity / security pipeline)
 P=$(curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals -H "$H" -H 'content-type: application/json' \\
   -d '${JSON.stringify(Object.assign({display_name:d.who.name},principalType(s)?{type:principalType(s)}:{}, {metadata:d.meta}))}' | jq -r .id)`);
@@ -983,6 +1080,7 @@ curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals/$P/identities -H "$H
     if(d.groups.length && d.ai) out.push(`# consumer_groups metadata takes AI Gateway group UUIDs (or names)
 curl -s "$KONNECT_API/v1/ai-gateways/$AIGW/consumer-groups" -H "$H" | jq -r '.data[] | "\\(.name) \\(.id)"'`);
   }
+  if(d.vault) out.push(...apiVault(s,d));
   const mp=(d.plans||[]).filter(p=>p==="tier-meta"||p==="bu-meta");
   if(!d.aiAny && mp.length){
     const rows=[];
@@ -1069,13 +1167,47 @@ resource "konnect_gateway_plugin_ace" "portal_access" {
 // Kong Identity principal type: agent (deployed AI agent), user (human), or unclassified
 const principalType = s => s.caller==="agents"?"agent":s.caller==="employees"?"user":null;
 // Directory, principal, identity and API key with the kong/konnect 3.28+ identity resources
+const tfDirectory = d => `resource "konnect_identity_directory" "default" {
+  name                     = "default"   # one directory per region: import the existing one if you have it
+  allow_all_control_planes = true${d.vault?"\n  vault_enabled            = true":""}
+}`;
+/** Token Vault on the directory: vault key, trusted IdP, provider and shared credential (kong/konnect 3.28+). */
+function tfVault(s,d){
+  const v=d.vault, out=[];
+  out.push(`resource "konnect_identity_vault_key" "v1" {
+  directory_id = konnect_identity_directory.default.id
+  name         = "v1"
+  public_key   = file("vault-public.pem")   # the data planes keep vault-private.pem
+}`);
+  if(v.subject==="access_token") out.push(`resource "konnect_identity_trusted_idp" "${s.idp}" {
+  directory_id         = konnect_identity_directory.default.id
+  issuer_url           = ${s.idp==="ki"?"konnect_identity_auth_server.acme.issuer":`"${d.idp.issuer}"`}   # must equal the token's iss
+  display_name         = "${d.idp.label}"
+  vault_access_enabled = true
+}`);
+  const extra = (v.auth==="client"||v.auth==="custom"?`\n  client_id     = var.${v.name.replace(/-/g,"_")}_client_id\n  client_secret = var.${v.name.replace(/-/g,"_")}_client_secret`:"")
+    + (v.auth==="custom"?`\n  authorization_endpoint = "https://auth.internal.example/authorize"\n  token_endpoint         = "https://auth.internal.example/token"`:"")
+    + (v.mode==="shared"?`\n  credential_type = "shared"`:"");
+  if(v.auth==="client"||v.auth==="custom") out.push(["client_id","client_secret"].map(f=>`variable "${v.name.replace(/-/g,"_")}_${f}" {\n  type      = string\n  sensitive = ${f==="client_secret"}\n}`).join("\n"));
+  out.push(`resource "konnect_identity_vault_provider" "${v.name.replace(/-/g,"_")}" {
+  directory_id  = konnect_identity_directory.default.id
+  template_name = "${v.tpl}"
+  name          = "${v.name}"${extra}
+}`);
+  if(v.auth==="static") out.push(`variable "upstream_api_key" {
+  type      = string
+  sensitive = true
+}
+resource "konnect_identity_vault_provider_credential" "default" {
+  directory_id = konnect_identity_directory.default.id
+  provider_id  = konnect_identity_vault_provider.${v.name.replace(/-/g,"_")}.id
+  secret       = var.upstream_api_key
+}`);
+  return out;
+}
 function tfPrincipal(s,d){
   const n=d.who.name.replace(/-/g,"_"), pt=principalType(s), out=[];
-  out.push(`resource "konnect_identity_directory" "default" {
-  name                     = "default"   # one directory per region: import the existing one if you have it
-  allow_all_control_planes = true
-}
-resource "konnect_identity_principal" "${n}" {
+  out.push(`resource "konnect_identity_principal" "${n}" {
   directory_id = konnect_identity_directory.default.id
   display_name = "${d.who.name}"${pt?`\n  type         = "${pt}"`:""}
   metadata     = jsonencode(${JSON.stringify(d.meta)})
@@ -1106,7 +1238,7 @@ ${s.idp==="ki"?`  auth_server_client = {
 function genTf(s,d){
   if(d.portal) return genTfPortal(s,d);
   const t=[];
-  t.push(`terraform {\n  required_providers {\n    konnect = { source = "kong/konnect"${d.pr?`, version = ">= 3.28.0" }   # identity principals`:" }"}\n  }\n}`);
+  t.push(`terraform {\n  required_providers {\n    konnect = { source = "kong/konnect"${d.pr||d.vault?`, version = ">= 3.28.0" }   # Kong Identity principals and Token Vault`:" }"}\n  }\n}`);
   if(s.idp==="ki") t.push(`resource "konnect_identity_auth_server" "acme" {
   name     = "acme"
   audience = "kong-gateway"
@@ -1125,7 +1257,9 @@ resource "konnect_identity_auth_server_client" "${d.who.name.replace(/-/g,"_")}"
   allow_scopes     = [konnect_identity_auth_server_scope.invoke.id]
   labels           = { app = "${d.who.name}" }
 }`);
+  if(d.pr||d.vault) t.push(tfDirectory(d));
   if(d.pr) t.push(...tfPrincipal(s,d));
+  if(d.vault) t.push(...tfVault(s,d));
   if(d.ai1){
     t.push(`resource "konnect_gateway_control_plane" "acme" {
   name         = "acme-ai"
@@ -1200,7 +1334,19 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
     t.push(`resource "konnect_ai_gateway" "acme" {
   name            = "acme-aigw"
   display_name    = "ACME AI Gateway"
-  deployment_type = "hybrid"
+  deployment_type = "hybrid"${aigw23(s)?`\n  min_runtime_version = "2.3"`:""}
+}`);
+    if(d.vault) t.push(`resource "konnect_ai_gateway_datastore" "token_vault" {
+  gateway_id = konnect_ai_gateway.acme.id
+  token_vault = {
+    name         = "token-vault"
+    display_name = "Token Vault"
+    config = {
+      directory       = konnect_identity_directory.default.name
+      current_version = "v1"
+      keys            = [{ version = "v1", key = "{vault://env/token-vault-key-v1}" }]   # TOKEN_VAULT_KEY_V1 = vault-private.pem on the data planes
+    }
+  }
 }`);
     const oc = d.auth.plugin==="openid-connect";
     t.push(`resource "konnect_ai_gateway_auth_strategy" "${s.caller}" {
@@ -1214,7 +1360,9 @@ ${oc?`      issuer            = "${d.idp.issuer}/.well-known/openid-configuratio
       audience_required = ["kong-gateway"]
 ${d.cl||d.pr?`      credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim = ["${d.idp.groups}"]\n`:""}      cache_tokens_salt = "change-me"\n      ssl_verify        = true`:`      key_names = ["apikey"]`}
 ${d.pr?`      principals = { enabled = true, directory = "default", error_on_miss = true${oc?", match_consumer_groups = true":""} }`:""}
-    }
+    }${oc&&d.vault&&d.vault.mode==="user"?`
+    token_vault = { enable_credential_manager = true }   # enrollment protection
+    datastores  = [{ name = konnect_ai_gateway_datastore.token_vault.token_vault.name }]`:""}
   }
 }`);
     d.groups.forEach(g=>t.push(`resource "konnect_ai_gateway_consumer_group" "${g.name.replace(/-/g,"_")}" {
@@ -1249,7 +1397,7 @@ ${d.pr?`      principals = { enabled = true, directory = "default", error_on_mis
     t.push(`resource "${res}" "${d.tgt.name.replace(/-/g,"_")}" {
   gateway_id = konnect_ai_gateway.acme.id
   # name, config, targets: see the kongctl tab for the same entity
-  # access = { auth_strategies = ["${s.caller}-${oc?"auth":"keys"}"]${s.access==="subcg"?`, acls = { allow = ["${d.tgt.sub}"] }`:s.access==="meta"?`, acls = { allow_when = ["\\"${d.tgt.name}\\" in principal.metadata.subscriptions"] }`:""} }
+${d.vault?`  # token_vault = { provider = "${d.vault.name}" }, datastores = [{ name = "token-vault" }]\n`:""}  # access = { auth_strategies = ["${s.caller}-${oc?"auth":"keys"}"]${s.access==="subcg"?`, acls = { allow = ["${d.tgt.sub}"] }`:s.access==="meta"?`, acls = { allow_when = ["\\"${d.tgt.name}\\" in principal.metadata.subscriptions"] }`:""} }
 }`);
   } else {
     t.push(`resource "konnect_gateway_control_plane" "acme" {
@@ -1349,7 +1497,7 @@ function outputHash(text){ // cyrb53: small, deterministic, same in the browser,
 }
 /** The recorded run for these answers, and whether it applied the files this version generates. */
 function e2eStatus(s,cfg){
-  const r=E2E_RESULTS[scenarioPayload(s)]; if(!r) return null;
+  const r=E2E_RESULTS[scenarioPayload(s)]||E2E_RESULTS[legacyPayload(s)]; if(!r) return null;
   const current=Object.entries(r.hashes||{}).every(([tab,h])=>cfg[tab]&&outputHash(cfg[tab].text)===h);
   return {...r, current};
 }
@@ -1387,14 +1535,16 @@ function outputTabs(s,cfg){ return ["decl",...(/Nothing to call/.test(cfg.api.te
    CODES and ID_STEPS are append-only: never reorder, reuse or delete an entry (a retired option keeps its code). */
 const APP_VERSION = "dev"; // the server replaces this with the release version
 const ID_FORMAT = "1";     // format 1: one char per single-choice step, two chars (10-bit mask) per multi-choice step
-const ID_STEPS = ["product","deploy","version","caller","target","cred","idp","record","access","plans","analytics"];
+const ID_STEPS = ["product","deploy","version","caller","target","cred","idp","record","access","plans","analytics","upstream","provider"];
+const ID_BASE_STEPS = 11;   // steps of the first layout: later steps are omitted from the payload while they're unanswered
 const CODES = {
-  product:["api","ai","ai1"], deploy:["konnect","self"], version:["3.16","3.15"],
+  product:["api","ai","ai1"], deploy:["konnect","self"], version:["3.16","3.15","2.3","2.2"],
   caller:["employees","apps","agents","portal"], target:["models","a2a","mcp"], cred:["oidc","cc","apikey"],
   idp:["okta","entra","keycloak","adfs","ki"], record:["claims","principals","consumers","portalapp"],
   access:["none","subcg","meta","claimacl","portal"],
   plans:["none","tier-cg","tier-meta","bu-cg","bu-meta","llm","pkg","app-cond","mcp-hits"],
-  analytics:["konnect","bu","cost","agentan","prom","otel"]};
+  analytics:["konnect","bu","cost","agentan","prom","otel"],
+  upstream:["none","vault-user","vault-shared"], provider:["github","slack","atlassian-rovo","google","datadog","custom-oauth","static_secret"]};
 const B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"; // Crockford base32
 const MULTI_STEPS = new Set(["plans","analytics"]);
 const idCheck = str => B32[[...str].reduce((a,c,i)=>(a*31+c.charCodeAt(0)*(i+1))%32,7)];
@@ -1410,8 +1560,16 @@ function scenarioPayload(s){
       out += B32[i+1];
     }
   }
+  // Steps added after the first layout are single-choice and dropped while unanswered (trailing "0"),
+  // so answers that don't use them keep the payload they always had.
+  const base = 1 + ID_STEPS.slice(0,ID_BASE_STEPS).reduce((n,k)=>n+(MULTI_STEPS.has(k)?2:1),0);
+  while(out.length>base && out.endsWith("0")) out = out.slice(0,-1);
   return out;
 }
+/** Answers saved before a step existed: AI Gateway 2.x had no version step until v1.8.0 and generated 2.2 config. */
+function legacyState(st){ if(st.product==="ai" && st.version==null) st.version="2.2"; return st; }
+/** Payload an earlier version minted for the same answers (AI Gateway 2.2 IDs had no version). */
+const legacyPayload = s => isAI(s)&&s.version==="2.2" ? scenarioPayload({...s,version:null}) : null;
 function scenarioId(s, version=APP_VERSION){ const body = `v${version}-${scenarioPayload(s)}`; return body + idCheck(body); }
 /** Decode an ID. Returns {version, state} or {error}. Unknown codes (from a newer version) are reported, not guessed. */
 function parseScenarioId(id){
@@ -1423,7 +1581,8 @@ function parseScenarioId(id){
   const state = {}, unknown = []; let p = 1;
   const num = c => { const n = B32.indexOf(c); if(n<0) throw 0; return n; };
   try{
-    for(const k of ID_STEPS){
+    for(const [i,k] of ID_STEPS.entries()){
+      if(i>=ID_BASE_STEPS && p>=payload.length){ state[k] = null; continue; }   // later step, unanswered
       if(MULTI_STEPS.has(k)){
         const mask = num(payload[p])*32 + num(payload[p+1]); p += 2; state[k] = [];
         for(let i=0;i<10;i++) if(mask&(1<<i)){ if(CODES[k][i]) state[k].push(CODES[k][i]); else unknown.push(`${k}#${i}`); }
@@ -1435,13 +1594,14 @@ function parseScenarioId(id){
     }
   }catch(e){ return {version, error:"This ID is truncated or malformed."}; }
   if(p !== payload.length) return {version, error:"This ID is truncated or malformed."};
+  legacyState(state);
   return {version, state, unknown};
 }
 /** Apply a decoded state to the live wizard. Reports what this version can't reproduce. */
 function openScenario(id){
   const r = parseScenarioId(id);
   if(r.error) return {ok:false, version:r.version, message:r.error};
-  Object.assign(S, {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]}, r.state);
+  Object.assign(S, {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null}, r.state);
   const before = JSON.stringify(S); prune(); const after = JSON.stringify(S);
   const dropped = ID_STEPS.filter(k => JSON.stringify(JSON.parse(before)[k]) !== JSON.stringify(S[k]));
   const ok = !r.unknown.length && before === after && complete();
@@ -1509,12 +1669,13 @@ function renderResult(){
   const ROLE={required:"required",recommended:"recommended",choice:"either",partial:"partial"};
   if(!tabs.includes(tab)) tab="decl";
   const summary=[
-    ["Product",`${S.product==="ai"?"AI Gateway 2.2":S.product==="ai1"?`Kong Gateway ${S.version} + AI plugins (AI Gateway 1.x)`:`Kong Gateway ${S.version}`} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
+    ["Product",`${S.product==="ai"?`AI Gateway ${S.version}`:S.product==="ai1"?`Kong Gateway ${S.version} + AI plugins (AI Gateway 1.x)`:`Kong Gateway ${S.version}`} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
     ["Caller",`${WHO[S.caller].label}s${d.aiAny?" → "+d.tgt.kind+"s":d.portal?" → API package "+d.tgt.pkg:""}`],
     ["Credential",S.cred==="apikey"?(d.portal?"Portal-issued API keys":"API keys"):`${S.cred==="oidc"?"OIDC login":d.portal?"OAuth client credentials via DCR":"OAuth client credentials"} · ${d.idp.label}`],
     ["Identity record",S.record==="claims"?`Token claims (virtual credential ${d.credClaim})`:S.record==="principals"?"Kong Identity principals":S.record==="portalapp"?"Portal application (auto-created principal)":"Consumers"],
     ["Auth",d.portal?`ace + application auth strategy (${S.cred==="cc"?"OIDC with DCR":"key-auth"})`:d.ai?`AuthStrategy ${d.auth.plugin}${d.pr?" + principals":""}`:`${d.auth.plugin}${d.pr?" (principals)":""}`],
     ["Access",STEPS.find(s=>s.id==="access").options(S).find(o=>o.v===S.access)?.label||"–"],
+    ...(d.vault?[["Upstream auth",`Token Vault · ${d.vault.mode==="user"?"each caller's":"shared"} ${d.vault.label} credential (provider ${d.vault.name})`]]:[]),
     ["Plans",S.plans.map(v=>label(STEPS.find(s=>s.id==="plans"),v)).join(", ")]];
   r.innerHTML=`
    <div class="res-head"><h2>Your identity workflow</h2><div class="res-tags">${E2E&&E2E.current?`<a class="badge ${E2E.failed?"draft":"ok"}" href="#e2e">${E2E.failed?`End-to-end test: ${E2E.failed} of ${E2E.passed+E2E.failed} checks failed`:`Tested end to end · ${E2E.date.slice(0,10)} · ${E2E.passed}/${E2E.passed} checks`}</a>`
@@ -1566,7 +1727,7 @@ function render(){
   if(location.pathname!==want) try{history.replaceState(null,"",want+location.search)}catch(e){}
 }
 function notice(msg,info){const n=document.getElementById("notice");n.hidden=!msg;n.textContent=msg||"";n.className="notice"+(info?" info":"")}
-document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[]});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
+document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
 document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
 (function consent(){ // Google Consent Mode: denied by default (see <head>), updated on the visitor's choice
@@ -1591,7 +1752,7 @@ if(shared){ // a shared link wins over what this browser remembered
     const b=document.createElement("button"); b.className="btn"; b.id="b-resume"; b.textContent="Resume where you left off";
     b.onclick=()=>{ // copy known answers only; prune() then drops values the wizard doesn't offer
       for(const k of ID_STEPS) if(k in st.S) S[k]=MULTI_STEPS.has(k)?(Array.isArray(st.S[k])?st.S[k].filter(v=>typeof v==="string"):[]):(typeof st.S[k]==="string"?st.S[k]:null);
-      cur=STEPS.some(x=>x.id===st.cur)?st.cur:"product";prune();notice("");render()}; n.appendChild(b);
+      legacyState(S);cur=STEPS.some(x=>x.id===st.cur)?st.cur:"product";prune();notice("");render()}; n.appendChild(b);
   }
 }
 render();

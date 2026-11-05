@@ -21,10 +21,35 @@ test("step ids are unique and every option has a label and a description", () =>
   }
 });
 
-test("version step: shown for API Gateway and AI Gateway 1.x, hidden for AI Gateway 2.x", () => {
-  reset({ product: "api" }); assert.ok(visible("version"));
-  reset({ product: "ai1" }); assert.ok(visible("version"));
-  reset({ product: "ai" }); assert.ok(!visible("version"));
+test("version step: Kong Gateway versions for API Gateway and AI Gateway 1.x, AI Gateway runtimes for 2.x", () => {
+  const vals = () => step("version").options(X.S).map(o => o.v);
+  for (const product of ["api", "ai1"]) { reset({ product }); assert.ok(visible("version")); assert.deepEqual(JSON.parse(JSON.stringify(vals())), ["3.16", "3.15"]); }
+  reset({ product: "ai" }); assert.ok(visible("version")); assert.deepEqual(JSON.parse(JSON.stringify(vals())), ["2.3", "2.2"]);
+  reset({ product: "api", version: "3.16" }); X.S.product = "ai"; X.prune(); assert.equal(X.S.version, null, "a Kong Gateway version is dropped for AI Gateway 2.x");
+});
+
+test("Token Vault: AI Gateway 2.3 MCP servers on Konnect, with an IdP token or a Kong Identity API key", () => {
+  const base = { product: "ai", deploy: "konnect", version: "2.3", caller: "employees", target: "mcp", cred: "oidc", idp: "okta", record: "claims" };
+  reset(base); assert.ok(visible("upstream")); assert.ok(!opt("upstream", "vault-user").disabled);
+  assert.ok(!visible("provider")); X.S.upstream = "vault-user"; assert.ok(visible("provider"));
+  assert.ok(opt("provider", "static_secret").disabled, "a static secret is shared only");
+  X.S.upstream = "vault-shared"; assert.ok(!opt("provider", "static_secret").disabled);
+  reset({ ...base, version: "2.2" }); assert.match(opt("upstream", "vault-user").disabled, /2\.3/);
+  reset({ ...base, deploy: "self" }); assert.match(opt("upstream", "vault-user").disabled, /Konnect/);
+  reset({ ...base, caller: "apps", cred: "apikey", idp: null, record: "consumers" }); assert.match(opt("upstream", "vault-shared").disabled, /Consumer keys/);
+  reset({ ...base, caller: "apps", cred: "apikey", idp: null, record: "principals" }); assert.ok(!opt("upstream", "vault-shared").disabled);
+  reset({ ...base, target: "models" }); assert.ok(!visible("upstream"));
+});
+
+test("scenario IDs: answers without the later steps keep their payload; AI Gateway IDs from before the version step open as 2.2", () => {
+  const api = { product: "api", deploy: "konnect", version: "3.16", caller: "apps", target: null, cred: "apikey", idp: null, record: "principals", access: "subcg", plans: ["tier-cg"], analytics: ["konnect"], upstream: null, provider: null };
+  assert.equal(X.scenarioPayload(api).length, 1 + 9 + 2 * 2, "no characters for unanswered later steps");
+  const ai = { ...api, product: "ai", version: null, target: "models", cred: "cc", idp: "ki", plans: ["llm"] };
+  const old = X.scenarioId(ai, "1.7.0"), p = X.parseScenarioId(old);
+  assert.ok(!p.error); assert.equal(p.state.version, "2.2");
+  assert.equal(X.legacyPayload(p.state), X.scenarioPayload(ai));
+  const tv = { ...ai, version: "2.3", target: "mcp", upstream: "vault-user", provider: "github" };
+  assert.deepEqual(JSON.parse(JSON.stringify(X.parseScenarioId(X.scenarioId(tv)).state)), tv);
 });
 
 test("target step: AI products only", () => {

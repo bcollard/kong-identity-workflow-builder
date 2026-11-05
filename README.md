@@ -4,11 +4,11 @@ Live at **https://kong.runlocal.dev/identity-paths/**.
 
 A single-page wizard that turns a few answers into a Kong identity blueprint:
 
-1. Product (API Gateway, AI Gateway 1.x = Kong Gateway + AI plugins, or AI Gateway 2.x), control plane (Konnect or self-managed) and Gateway version (3.15 / 3.16)
+1. Product (API Gateway, AI Gateway 1.x = Kong Gateway + AI plugins, or AI Gateway 2.x), control plane (Konnect or self-managed) and version (Kong Gateway 3.15 / 3.16, AI Gateway 2.2 / 2.3)
 2. Who calls (employees, apps, agents, Dev Portal applications) and, on AI Gateway, what they call (models, A2A agents, MCP servers)
 3. Credential (OIDC login, OAuth client credentials, API keys) and OAuth server (Kong Identity, Okta, Entra ID, Keycloak, AD FS)
 4. Identity record (token claims, Kong Identity principals, Consumers)
-5. Access control, usage plans and analytics
+5. Access control, upstream credentials for MCP servers (Kong Identity Token Vault, AI Gateway 2.3), usage plans and analytics
 
 It shows which Consumer Groups are really needed (sub-CGs, tier-CGs, BU-CGs) and who owns them, plays an animated
 sequence diagram, and generates kongctl/decK, Konnect API and Terraform snippets.
