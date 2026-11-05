@@ -406,12 +406,14 @@ function renderStepper(){
 function renderQuestion(){
   const st=STEPS.find(s=>s.id===cur), q=document.getElementById("question");
   const opts=st.options(S), vs=visibleSteps(), idx=vs.findIndex(s=>s.id===cur);
+  // A multi-choice step with at most one enabled option besides "none" has nothing to combine: show it as single-choice.
+  const multi=st.multi&&opts.filter(o=>!o.disabled&&o.v!=="none").length>1;
   q.innerHTML=`<div><span class="eyebrow">Step ${idx+1} of ${vs.length}</span><h2>${st.ask}</h2></div>
     ${st.help?`<p class="help">${st.help(S)}</p>`:""}
-    ${st.multi?`<p class="hint">Select all that apply, then ${idx===vs.length-1?"Build the workflow":"Next"}.</p>`:""}
-    <div class="opts${st.multi?" multi":""}" role="${st.multi?"group":"radiogroup"}" aria-label="${st.title}"></div>
+    ${multi?`<p class="hint">Select all that apply, then ${idx===vs.length-1?"Build the workflow":"Next"}.</p>`:""}
+    <div class="opts${multi?" multi":""}" role="${multi?"group":"radiogroup"}" aria-label="${st.title}"></div>
     <div class="nav"><button class="btn" id="b-back" ${idx===0?"disabled":""}>Back</button><span class="sp"></span>
-      <button class="btn primary" id="b-next" ${answered(st)?"":"disabled"}>${idx===vs.length-1?"Build the workflow":"Next"}${st.multi&&S[st.id].length&&!S[st.id].includes("none")?` · ${S[st.id].length} selected`:""}</button></div>`;
+      <button class="btn primary" id="b-next" ${answered(st)?"":"disabled"}>${idx===vs.length-1?"Build the workflow":"Next"}${multi&&S[st.id].length&&!S[st.id].includes("none")?` · ${S[st.id].length} selected`:""}</button></div>`;
   const box=q.querySelector(".opts");
   opts.forEach(o=>{
     const sel=st.multi?S[st.id].includes(o.v):S[st.id]===o.v;
@@ -420,10 +422,11 @@ function renderQuestion(){
     const tag=o.tag?`<span class="tag ${o.tag}">${o.tagText}</span>`:"";
     b.innerHTML=`<span class="l">${esc(o.label)} ${tag}</span><span class="s">${o.s||""}</span>${o.ex?`<span class="ex">${esc(o.ex)}</span>`:""}${o.disabled?`<span class="why">${esc(o.disabled)}</span>`:o.why?`<span class="why">${esc(o.why)}</span>`:""}`;
     b.onclick=()=>{ if(o.disabled) return;
-      if(st.multi){ let a=S[st.id]; if(o.v==="none") a=a.includes("none")?[]:["none"]; else { a=a.filter(x=>x!=="none"); a=a.includes(o.v)?a.filter(x=>x!==o.v):[...a,o.v]; } S[st.id]=a; }
+      if(st.multi&&!multi) S[st.id]=[o.v];
+      else if(st.multi){ let a=S[st.id]; if(o.v==="none") a=a.includes("none")?[]:["none"]; else { a=a.filter(x=>x!=="none"); a=a.includes(o.v)?a.filter(x=>x!==o.v):[...a,o.v]; } S[st.id]=a; }
       else S[st.id]=o.v;
       prune(); render();
-      const done = !st.multi || (o.v==="none" && S[st.id].includes("none"));   // "No plan" excludes every other choice: nothing left to pick
+      const done = !multi || (o.v==="none" && S[st.id].includes("none"));   // "No plan" excludes every other choice: nothing left to pick
       if(done){ const n=vs[idx+1]; if(n&&STEPS.find(s=>s.id===n.id)) { cur=visibleSteps()[visibleSteps().findIndex(s=>s.id===st.id)+1]?.id||cur; render(); } }
     };
     box.appendChild(b);

@@ -242,7 +242,11 @@ test("click through an AI Gateway 2.3 MCP server with Token Vault", { skip: !KON
   };
   choose("AI Gateway 2.x"); choose("Konnect"); choose("AI Gateway 2.3"); choose("Employees"); choose("MCP servers");
   choose("OIDC login"); choose("Okta"); choose("Token claims only"); choose("Any authenticated caller");
-  choose("Token Vault · each caller's own account"); choose("GitHub"); choose("No plan");
+  choose("Token Vault · each caller's own account"); choose("GitHub");
+  assert.match(text(doc.querySelector("#question h2")), /usage plans/i);
+  assert.ok(!doc.querySelector("#question .opts.multi") && !doc.querySelector("#question .hint"), "one plan besides \"No plan\": shown as single-choice");
+  choose("Hit limit on the MCP path");
+  assert.match(text(doc.querySelector("#question h2")), /track usage/i, "the only plan moves to the next step");
   choose("Konnect Analytics"); doc.getElementById("b-next").click();
   const res = doc.getElementById("result");
   assert.equal(res.hidden, false, "result shown");
