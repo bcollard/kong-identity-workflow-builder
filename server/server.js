@@ -10,6 +10,11 @@ const VERSION = process.env.APP_VERSION || require("../package.json").version;
 const HTML = pageHtml(VERSION);
 const NOT_FOUND = fs.readFileSync(path.join(__dirname, "../site/404.html"), "utf8").replace('href="./"', `href="${BASE}/"`);
 const X = loadLogic(VERSION);
+const SITEMAP = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://kong.runlocal.dev${BASE}/</loc></url>
+</urlset>
+`;
 
 // Content Security Policy: only this page's own inline scripts (hashed at startup, after the version stamp),
 // the Google tag, Google Fonts and Analytics endpoints. No framing, no forms, no plugins.
@@ -56,6 +61,7 @@ const server = http.createServer((req, res) => {
   const p = url.pathname;
   if (p === "/" || p === BASE) return send(res, 301, "text/plain", "", { location: `${BASE}/` });
   if (p === `${BASE}/` || /^\/identity-paths\/s\/[^/]+\/?$/.test(p)) return send(res, 200, "text/html; charset=utf-8", HTML);
+  if (p === `${BASE}/sitemap.xml`) return send(res, 200, "application/xml; charset=utf-8", SITEMAP);
   if (p === `${BASE}/version.json`) return send(res, 200, "application/json", JSON.stringify({ version: VERSION, idFormat: "1" }) + "\n");
   const m = /^\/identity-paths\/api\/scenarios\/([^/]+)$/.exec(p);
   if (m) {
