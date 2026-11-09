@@ -111,6 +111,7 @@ test("server: routes, version stamp and scenario API", async () => {
     assert.equal(api.canonical, X.scenarioId(s, "1.4.0"));
     assert.equal((await get(`/identity-paths/api/scenarios/nope`)).code, 400);
     assert.equal(JSON.parse((await get("/identity-paths/version.json")).body).version, "1.4.0");
+    assert.match((await get("/identity-paths/sitemap.xml")).body, /<loc>https:\/\/kong\.runlocal\.dev\/identity-paths\/<\/loc>/);
     assert.equal((await get("/identity-paths/nope")).code, 404);
     // CSP allows exactly the page's inline scripts, as served
     const csp = page.headers["content-security-policy"];
