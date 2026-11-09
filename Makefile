@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help serve test test-all schemas image scenario
+.PHONY: help serve test test-all schemas image scenario og
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-8s\033[0m %s\n", $$1, $$2}'
@@ -21,3 +21,6 @@ test-all: ## Same, including Konnect control planes
 
 schemas: ## Refresh Kong plugin schema snapshots from real containers (needs Docker)
 	test/fixtures/refresh-schemas.sh
+
+og: ## Render site/og.png (social preview) from site/og.svg (needs rsvg-convert and the Funnel Sans font)
+	rsvg-convert -w 1200 -h 630 site/og.svg -o site/og.png

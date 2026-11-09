@@ -15,6 +15,7 @@ const SITEMAP = `<?xml version="1.0" encoding="UTF-8"?>
   <url><loc>https://kong.runlocal.dev${BASE}/</loc></url>
 </urlset>
 `;
+const OG_IMAGE = fs.readFileSync(path.join(__dirname, "../site/og.png")); // social preview card (og:image)
 
 // Content Security Policy: only this page's own inline scripts (hashed at startup, after the version stamp),
 // the Google tag, Google Fonts and Analytics endpoints. No framing, no forms, no plugins.
@@ -62,6 +63,7 @@ const server = http.createServer((req, res) => {
   if (p === "/" || p === BASE) return send(res, 301, "text/plain", "", { location: `${BASE}/` });
   if (p === `${BASE}/` || /^\/identity-paths\/s\/[^/]+\/?$/.test(p)) return send(res, 200, "text/html; charset=utf-8", HTML);
   if (p === `${BASE}/sitemap.xml`) return send(res, 200, "application/xml; charset=utf-8", SITEMAP);
+  if (p === `${BASE}/og.png`) return send(res, 200, "image/png", OG_IMAGE, { "cache-control": "public, max-age=86400" });
   if (p === `${BASE}/version.json`) return send(res, 200, "application/json", JSON.stringify({ version: VERSION, idFormat: "1" }) + "\n");
   const m = /^\/identity-paths\/api\/scenarios\/([^/]+)$/.exec(p);
   if (m) {
