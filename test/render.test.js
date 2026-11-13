@@ -257,5 +257,7 @@ test("click through an AI Gateway 2.3 MCP server with Token Vault", { skip: !KON
   assert.match(code, /enable_credential_manager: true/);
   assert.match(text(res), /Token Vault/);
   assert.match(text(res), /GitHub never receives your IdP token/);
+  const fold = [...res.querySelectorAll("details.fold")].find(x => /Watch out/.test(text(x.querySelector("summary"))));
+  assert.ok(fold && !fold.open, "Watch out is folded by default");
   w.close();
 });

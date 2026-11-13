@@ -118,6 +118,13 @@ ul.plain{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;g
 ul.plain li{display:flex;gap:8px;align-items:baseline}
 ul.plain li::before{content:"";flex:0 0 6px;height:6px;margin-top:6px;background:var(--accent);border-radius:1px}
 ul.warns li::before{background:var(--warn)}
+details.fold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"▸";color:var(--muted);font-size:11px;transition:transform .15s}
+details.fold[open]>summary::before{transform:rotate(90deg)}
+details.fold>summary h3{display:inline}
+details.fold[open]>summary{margin-bottom:8px}
+@media (prefers-reduced-motion: reduce){details.fold>summary::before{transition:none}}
 code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .res{display:flex;flex-direction:column;gap:16px}
 .res-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
@@ -571,7 +578,7 @@ function renderBlueprint(){
    </div>
    ${nCG?`<div><h3>Groups</h3><ul class="plain">${d.groups.map(g=>`<li><span><code>${g.name}</code> · ${g.owner}</span></li>`).join("")}</ul></div>`:""}
    ${Object.keys(d.meta).length&&d.pr?`<div><h3>Principal metadata</h3><pre class="code" style="max-height:none;padding:8px">${esc(JSON.stringify(d.meta,null,1))}</pre></div>`:""}
-   ${d.warns.length?`<div><h3>Watch out</h3><ul class="plain warns">${d.warns.slice(0,4).map(w=>`<li><span>${esc(w)}</span></li>`).join("")}</ul></div>`:""}`;
+   ${d.warns.length?`<details class="fold"><summary><h3>Watch out (${d.warns.length})</h3></summary><ul class="plain warns">${d.warns.slice(0,4).map(w=>`<li><span>${esc(w)}</span></li>`).join("")}</ul></details>`:""}`;
 }
 
 /* ---------- sequence generation ---------- */
@@ -1728,7 +1735,7 @@ function renderResult(){
      <div class="panel"><h3>Consumer Groups to create</h3>${d.groups.length?`<div class="tablebox"><table><thead><tr><th>Group</th><th>Kind</th><th>Owner</th><th>Carries</th><th>Members from</th></tr></thead><tbody>${d.groups.map(g=>`<tr><td><code>${g.name}</code></td><td><span class="kind ${g.kind}">${g.kind==="sub"?"sub-CG":g.kind==="tier"?"tier-CG":"BU-CG"}</span></td><td>${g.owner}</td><td>${esc(g.carries)}</td><td>${esc(g.memb)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">None. Access and plans are handled without Consumer Groups.</p>`}
        ${d.pr&&Object.keys(d.meta).length?`<h3>Principal metadata</h3><pre class="code">${esc(JSON.stringify(d.meta,null,2))}</pre>`:""}</div>
      <div class="panel"><h3>Analytics</h3>${d.an.length?`<div class="tablebox"><table><thead><tr><th>Tool</th><th>Where</th><th>Dimensions</th></tr></thead><tbody>${d.an.map(a=>`<tr><td>${a.tool}</td><td>${esc(a.where)}</td><td>${esc(a.dims)}</td></tr>`).join("")}</tbody></table></div>`:`<p class="empty">No analytics selected.</p>`}</div>
-     <div class="panel full"><h3>Watch out</h3><ul class="plain warns">${[...d.warns,...d.notes].map(w=>`<li><span>${esc(w)}</span></li>`).join("")||"<li><span>Nothing specific.</span></li>"}</ul></div>
+     <details class="panel full fold"><summary><h3>Watch out (${d.warns.length+d.notes.length})</h3></summary><ul class="plain warns">${[...d.warns,...d.notes].map(w=>`<li><span>${esc(w)}</span></li>`).join("")||"<li><span>Nothing specific.</span></li>"}</ul></details>
      ${E2E?`<div class="panel full" id="e2e"><h3>End-to-end test</h3>
        <p class="muted" style="margin:0">${E2E.current?"These generated files were applied and checked":"An earlier version of these files was applied and checked"} on ${esc(E2E.date.slice(0,10))} with builder ${esc(E2E.builder)}: ${esc(E2E.environment)}. The generated file was ${E2E.raw_generated_file==="accepted"?"accepted as generated":"rejected as generated"}; changes made to run it:</p>
        <ul class="plain">${E2E.changes.map(c=>`<li><span><b>${esc(c.kind)}</b> · ${esc(c.what)}</span></li>`).join("")}</ul>
