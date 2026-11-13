@@ -449,7 +449,7 @@ function renderQuestion(){
     box.appendChild(b);
   });
   q.querySelector("#b-back").onclick=()=>{cur=vs[idx-1].id;render()};
-  q.querySelector("#b-next").onclick=()=>{ if(idx<vs.length-1){cur=vs[idx+1].id;render()} else {render();document.getElementById("result").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})} };
+  q.querySelector("#b-next").onclick=()=>{ if(idx<vs.length-1){cur=vs[idx+1].id;render()} else {const miss=visibleSteps().find(x=>!answered(x));if(miss){cur=miss.id;render();return}render();document.getElementById("result").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})} };
 }
 const complete=()=>visibleSteps().every(answered);
 
@@ -1766,7 +1766,7 @@ function render(){
 }
 function notice(msg,info){const n=document.getElementById("notice");n.hidden=!msg;n.textContent=msg||"";n.className="notice"+(info?" info":"")}
 document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
-document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
+document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",version:"2.3",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
 (function consent(){ // Google Consent Mode: denied by default (see <head>), updated on the visitor's choice
   let choice=null; try{choice=localStorage.getItem("iwb-consent")}catch(e){}

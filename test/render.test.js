@@ -263,3 +263,21 @@ test("click through an AI Gateway 2.3 MCP server with Token Vault", { skip: !KON
   assert.ok(ctx && !ctx.open && ctx.querySelector("#kv").children.length > 0, "request context is folded under the diagram and filled");
   w.close();
 });
+
+test("Load an example, then Build the workflow, shows the result", { skip: !KONNECT && "Konnect control plane out of scope" }, () => {
+  const w = openPage();
+  const d = w.document;
+  d.getElementById("b-sample").click();
+  d.getElementById("b-next").click();
+  assert.equal(d.getElementById("result").hidden, false, "the example answers every visible step");
+});
+
+test("Build the workflow with a step left unanswered goes to that step", () => {
+  const w = openPage();
+  const d = w.document;
+  d.getElementById("b-sample").click();
+  w.eval('S.version = null; render()');
+  d.getElementById("b-next").click();
+  assert.equal(d.getElementById("result").hidden, true);
+  assert.match(text(d.querySelector("#question h2, #question h3, #question")), /version/i);
+});
