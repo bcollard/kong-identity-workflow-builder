@@ -360,7 +360,7 @@ const STEPS = [
      {v:"app-cond",label:"Per-application plan",s:s.record==="consumers"?"rate-limiting-advanced scoped to the mapped Consumer.":"rate-limiting-advanced with condition principal.id == the application ID.",tag:"nocg",tagText:"No CG"}];
    if(ai) return [
      {v:"none",label:"No plan",s:"Only access control."},
-     {v:"llm",label:"LLM token budget per tier",s:"Global ai-rate-limiting-advanced, rules per tier-CG, one counter per caller credential.",tag:"cg",tagText:"tier-CG",
+     {v:"llm",label:"LLM token budget per tier",s:"Global ai-rate-limiting-advanced, rules per tier-CG, per caller credential: a monthly cost budget (calendar window, prices on the targets) and a per-minute token cap.",tag:"cg",tagText:"tier-CG",
       disabled:s.target!=="models"?"AI rate limiting isn't available on agents or MCP servers (2.2 and 2.3).":null},
      {v:"mcp-hits",label:"Hit limit on the MCP path",s:"rate-limiting-advanced per caller on the MCP route. It counts every MCP message (initialize, tools/list, notifications, tools/call), so size the limit for whole sessions.",tag:"nocg",tagText:"No CG",
       disabled:s.target!=="mcp"?"MCP servers only.":null}];
@@ -499,6 +499,12 @@ function derive(s){
   // warnings
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model, agent or MCP server. Several issuers: list them on that strategy (issuers_allowed + extra_jwks_uris) and map callers on a claim unique across issuers, or give the other issuer its own model.");
   if(!ai && gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
+  if(isAIany(s) && s.caller==="employees" && s.target==="models"){
+    if(s.cred==="apikey") notes.push("Coding agents send the key in their own header. Claude Code uses x-api-key (ANTHROPIC_API_KEY), so key_names lists it. key-auth reads the header value as is, so tools that send Authorization: Bearer <key> (Codex, GitHub Copilot, Cursor) don't match: give them OIDC tokens, or a custom header if the tool has that setting.");
+    else notes.push("Claude Code: an apiKeyHelper script can print a short-lived token from your IdP, sent as Authorization: Bearer. Set CLAUDE_CODE_API_KEY_HELPER_TTL_MS below the token lifetime, and clear ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN: when set, Claude Code doesn't call the helper.");
+  }
+  if(plans.some(p=>!["none","pkg"].includes(p))) notes.push(`Rate-limit counters use strategy: local, so each data plane node counts on its own: with N nodes a caller can reach N × the limit. With several nodes, set strategy: redis and a shared Redis${s.deploy==="konnect"?" (cluster doesn't work on Konnect data planes, which run in hybrid mode)":" (cluster needs a traditional, database-backed deployment)"}.`);
+  if(ai && (plans.includes("llm")||(s.analytics||[]).includes("cost"))) notes.push("Costs and cost budgets use the prices on each model target (input_cost, output_cost, plus cache_read_cost and cache_write_cost if the provider discounts cached tokens), in USD per million tokens. A target without prices counts as free.");
   if(vault){
     notes.push(`Token Vault releases the ${vault.label} credential to the AI Gateway only (mTLS); the caller and its agent never see it.`);
     if(vault.mode==="user") notes.push("A caller who hasn't enrolled sees virtual authenticate and check_authentication_status tools with an enrollment URL (valid 10 minutes). The real tools appear after enrollment.");
@@ -643,8 +649,8 @@ function buildSeq(s,d){
   }
   for(const r of rl){
     if(r.sub==="MCP hits"){ steps.push({f:prev,t:r.id,l:`${hitIdentifier(s)} · 100 hits / min`,h:"Hit limit on the MCP path",p:"rate-limiting-advanced counts every MCP message on this route, per caller. Over the limit returns 429.",set:{decision:"rate-limiting-advanced: within limit"}}); prev=r.id; continue; }
-    const txt = r.sub==="token budget"?(d.ai1?"CG ai-tier-standard · identifier credential":"tier rule · partition by credential"):r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
-    steps.push({f:prev,t:r.id,l:txt,h:r.sub==="token budget"?"LLM token budget":r.sub==="API plan"?"API usage plan (API owner)":"BU-wide plan (org admin)",p:r.sub==="token budget"?(d.ai1?"ai-rate-limiting-advanced scoped to the tier group, one counter per credential (llm_providers mode).":"One global policy; its rules match tier groups, so a caller in several groups never conflicts."):"Over the limit returns 429.",set:{decision:"acl: allowed\n"+r.label+": within limit"}}); prev=r.id;
+    const txt = r.sub==="token budget"?(d.ai1?"CG ai-tier-standard · identifier credential":"tier rule · per credential · 50 USD / month + 200k tokens / min"):r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
+    steps.push({f:prev,t:r.id,l:txt,h:r.sub==="token budget"?"LLM token budget":r.sub==="API plan"?"API usage plan (API owner)":"BU-wide plan (org admin)",p:r.sub==="token budget"?(d.ai1?"ai-rate-limiting-advanced scoped to the tier group, one counter per credential (llm_providers mode).":"One global policy; its rules match tier groups, so a caller in several groups never conflicts. Cost comes from the prices on the target; prompt tokens are estimated before the call and corrected from the provider's usage after it."):"Over the limit returns 429.",set:{decision:"acl: allowed\n"+r.label+": within limit"}}); prev=r.id;
   }
   steps.push({f:prev,t:ai?"px":"up",l:ai?"":"proxied",h:ai?"Gateway-side protocol handling":"Proxied",p:""});
   if(ai){
@@ -721,7 +727,7 @@ function genDeclarativeAI1(s,d){
 ${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&g.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${s.access==="claimacl"&&s.target!=="mcp"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
           ssl_verify: true`:`      - name: key-auth
         config:
-          key_names: [apikey]
+          key_names: [${s.caller==="employees"&&s.target==="models"?"apikey, x-api-key":"apikey"}]${s.caller==="employees"&&s.target==="models"?"   # x-api-key: Claude Code sends ANTHROPIC_API_KEY there":""}
 ${d.pr?"          identity_realms: []\n          principals: { enabled: true, directory: default }":"          hide_credentials: true"}`;
   let acl="";
   if(s.access==="subcg"&&s.target!=="mcp") acl=`\n      - name: acl\n        config: { allow: [${d.tgt.sub}], include_consumer_groups: true }`;
@@ -737,7 +743,7 @@ ${auth}${acl}
         config:
           targets:
             - route_type: llm/v1/chat
-              auth: { header_name: Authorization, header_value: "Bearer {vault://env/openai-key}" }
+              auth: { header_name: Authorization, header_value: "{vault://env/openai-auth-header}" }   # OPENAI_AUTH_HEADER="Bearer sk-...": a reference must be the whole value
               model: { provider: openai, name: gpt-4.1 }
               logging: { log_statistics: true, log_payloads: false }`;
   else if(s.target==="a2a") svc=`  - name: agent-${d.tgt.name}
@@ -759,6 +765,7 @@ ${auth}
       - name: ai-mcp-proxy
         config:
           mode: passthrough-listener
+          logging: { log_statistics: true${s.access&&s.access!=="none"?", log_audits: true":""} }${s.access&&s.access!=="none"?"   # audits: one log entry per ACL decision":""}
 ${s.access==="claimacl"?`          acl_attribute_type: oauth_access_token\n          access_token_claim_field: .${d.idp.groups}\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:s.access==="subcg"?`          include_consumer_groups: true\n          default_acl: [{ scope: tools, allow: [${d.tgt.sub}] }]`:"          # no tool ACLs"}${d.plans.includes("mcp-hits")?`
       - name: rate-limiting-advanced         # AI team · hit limit on the MCP path, per caller
         config: { identifier: ${hitIdentifier(s)}, limit: [100], window_size: [60], window_type: fixed, strategy: local, namespace: mcp-${d.tgt.name} }`:""}`;
@@ -796,7 +803,7 @@ ${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.le
     display_name: ${WHO[s.caller].label} API keys
     type: key-auth
     config:
-      key_names: [apikey]${d.pr?"\n      principals: { enabled: true, directory: default, error_on_miss: true }":s.target==="mcp"?"":"\n      hide_credentials: true"}`;  // ai-mcp-proxy needs the credential: the converter overrides hide_credentials to false
+      key_names: [${s.caller==="employees"&&s.target==="models"?"apikey, x-api-key":"apikey"}]${s.caller==="employees"&&s.target==="models"?"   # x-api-key: Claude Code sends ANTHROPIC_API_KEY there":""}${d.pr?"\n      principals: { enabled: true, directory: default, error_on_miss: true }":s.target==="mcp"?"":"\n      hide_credentials: true"}`;  // ai-mcp-proxy needs the credential: the converter overrides hide_credentials to false
     // AI Consumers can't list groups: membership is declared on the group (consumers: [refs])
     const cgs = d.groups.map(g=>`  - { ref: ${g.name}, name: ${g.name}, display_name: "${g.kind} · ${g.owner}"${d.co?`, consumers: [${d.who.name}]`:""} }`).join("\n");
     const cons = d.co?`    consumers:
@@ -813,12 +820,16 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
     global: true
     config:
       identifier: credential
-      strategy: local
+      strategy: local                # one count per data plane node: use redis with several nodes
       policies:
         - match: [{ type: consumer_group, key: name, values: [ai-tier-standard] },
                   { type: credential, partition_by: true }]
-          window_type: fixed
-          limits: [{ limit: 10000, window_size: 3600 }]`);
+          window_type: calendar
+          limits: [{ limit: 50, period: month, tokens_count_strategy: cost }]       # 50 USD per caller per month
+        - match: [{ type: consumer_group, key: name, values: [ai-tier-standard] },
+                  { type: credential, partition_by: true }]
+          window_type: sliding
+          limits: [{ limit: 200000, window_size: 60, tokens_count_strategy: total_tokens }]   # burst cap per minute`);
     if(s.target==="a2a") pol.push(`  - ref: trim-agent-card          # skill allowance from the JWT claim allowed_skills
     name: trim-agent-card
     display_name: Trim agent card skills
@@ -830,7 +841,7 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
     name: mcp-hit-limit
     display_name: MCP hit limit
     type: rate-limiting-advanced
-    config: { identifier: ${hitIdentifier(s)}, limit: [100], window_size: [60], window_type: fixed, strategy: local, namespace: mcp-${d.tgt.name} }`);
+    config: { identifier: ${hitIdentifier(s)}, limit: [100], window_size: [60], window_type: fixed, strategy: local, namespace: mcp-${d.tgt.name} }   # local: per node`);
     if((s.analytics||[]).includes("prom")) pol.push(`  - ref: metrics\n    name: metrics\n    display_name: Metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
     const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`
       :s.access==="meta"?`, acls: { allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions'] }`:"";
@@ -845,7 +856,7 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
         capabilities: [generate]
         formats: [{ type: openai }]
         config: { route: { paths: [/v1], model: { body_param: model, values: [${d.tgt.name}] } } }
-        targets: [{ name: gpt-4.1, provider: openai, config: { type: openai } }]
+        targets: [{ name: gpt-4.1, provider: openai, config: { type: openai${d.plans.includes("llm")||(s.analytics||[]).includes("cost")?", input_cost: 2, output_cost: 8":""} } }]${d.plans.includes("llm")||(s.analytics||[]).includes("cost")?"   # USD per 1M tokens: use your contract prices":""}
         access: { auth_strategies: [${stratName}]${allow} }`;
     else if(s.target==="a2a") ent=`    agents:
       - ref: ${d.tgt.name}
@@ -860,7 +871,7 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
         name: ${d.tgt.name}
         display_name: ${d.tgt.name}
         type: passthrough-listener
-        config: { url: https://mcp.${mcpSlug}.example/mcp, route: { paths: [/mcp/${mcpSlug}] } }${d.vault?`
+        config: { url: https://mcp.${mcpSlug}.example/mcp, route: { paths: [/mcp/${mcpSlug}] }${s.access&&s.access!=="none"?", logging: { audits: true }":""} }${s.access&&s.access!=="none"?"   # audits: one log entry per ACL decision":""}${d.vault?`
         datastores: [{ name: token-vault }]
         token_vault: { provider: ${d.vault.name}${d.vault.subject==="api_key"?", subject_token_type: api_key":""} }   # ${d.vault.mode==="user"?"each caller's own":"shared"} ${d.vault.label} credential`:""}
         access:
@@ -1314,7 +1325,7 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
   config = {
     targets = [{
       route_type = "llm/v1/chat"
-      auth       = { header_name = "Authorization", header_value = "Bearer {vault://env/openai-key}" }
+      auth       = { header_name = "Authorization", header_value = "{vault://env/openai-auth-header}" }   # OPENAI_AUTH_HEADER="Bearer sk-..."
       model      = { provider = "openai", name = "gpt-4.1" }
     }]
   }
@@ -1393,12 +1404,17 @@ ${d.pr?`      principals = { enabled = true, directory = "default", error_on_mis
   type         = "ai-rate-limiting-advanced"
   global       = true
   config = jsonencode({
-    identifier = "credential", strategy = "local",
+    identifier = "credential", strategy = "local",   # one count per data plane node: use redis with several nodes
     policies = [{
       match       = [{ type = "consumer_group", key = "name", values = ["ai-tier-standard"] },
                      { type = "credential", partition_by = true }]
-      window_type = "fixed"
-      limits      = [{ limit = 10000, window_size = 3600 }]
+      window_type = "calendar"
+      limits      = [{ limit = 50, period = "month", tokens_count_strategy = "cost" }]   # 50 USD per caller per month
+    }, {
+      match       = [{ type = "consumer_group", key = "name", values = ["ai-tier-standard"] },
+                     { type = "credential", partition_by = true }]
+      window_type = "sliding"
+      limits      = [{ limit = 200000, window_size = 60, tokens_count_strategy = "total_tokens" }]   # burst cap per minute
     }]
   })
 }`);
@@ -1537,9 +1553,11 @@ function applyPlan(s,d,cfg,tabs){
   if(split&&has("api")) gw.push({tab:"api",role:"required",join:"and",text:"The plans read from principal metadata (plugin expressions), after decK."});
   if(has("tf")) gw.push({tab:"tf",role:"partial",text:split?"Can create those plans instead of the API calls.":d.ai?"Creates the gateway, auth strategies and groups; model, agent and MCP bodies stay in kongctl."
     :"A starting point for the same entities; not every plugin is written out."});
+  const aclTest = s.target==="mcp" && s.access && s.access!=="none"
+    ? `Before go-live, test the MCP server with an allowed caller, a caller outside the ${s.access==="meta"?"subscription":"group"}, and a caller with ${s.access==="meta"?"no subscriptions in its metadata":s.access==="claimacl"?"an empty groups claim":"no group at all"}. If you add per-tool ACLs, also test a caller allowed only some tools: a denied tool returns an error.` : "";
   steps.push({title:"Gateway configuration",items:gw,
-    note:s.deploy==="self"?`${declName==="kongctl"?"":declName+" needs a database-backed control plane; DB-less nodes take the same file with POST /config."}`
-      :"Pick one tool per entity: managing the same entity with decK/kongctl and Terraform makes them overwrite each other."});
+    note:[s.deploy==="self"?`${declName==="kongctl"?"":declName+" needs a database-backed control plane; DB-less nodes take the same file with POST /config."}`
+      :"Pick one tool per entity: managing the same entity with decK/kongctl and Terraform makes them overwrite each other.",aclTest].filter(Boolean).join(" ")});
   if(steps.length>1) steps[0].note=[steps[0].note,"Do this first: the gateway configuration refers to it."].filter(Boolean).join(" ");
   return steps;
 }

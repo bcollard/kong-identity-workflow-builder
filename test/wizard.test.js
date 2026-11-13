@@ -176,3 +176,20 @@ test("no dead ends: every reachable visible step offers at least one enabled opt
   reset();
   assert.deepEqual(dead.slice(0, 3), []);
 });
+
+test("AI Gateway 2.x LLM budget: monthly cost budget, burst cap, prices on the target, per-node counter note", () => {
+  for (const version of ["2.2", "2.3"]) {
+    reset({ product: "ai", deploy: "self", version, caller: "apps", target: "models", cred: "cc", idp: "okta", record: "claims", access: "claimacl", plans: ["llm"], analytics: ["prom"] });
+    const d = X.derive(X.S), y = X.genDeclarative(X.S, d).text;
+    assert.match(y, /window_type: calendar/); assert.match(y, /period: month, tokens_count_strategy: cost/);
+    assert.match(y, /input_cost: 2, output_cost: 8/);
+    assert.ok(d.notes.some(n => /strategy: local/.test(n) && /redis/.test(n)), version);
+  }
+});
+
+test("MCP servers with an ACL: the apply steps list the access tests", () => {
+  reset({ product: "ai", deploy: "self", version: "2.3", caller: "employees", target: "mcp", cred: "oidc", idp: "okta", record: "claims", access: "claimacl", plans: ["none"], analytics: ["prom"] });
+  const d = X.derive(X.S), cfg = { decl: X.genDeclarative(X.S, d), api: X.genApi(X.S, d) };
+  const notes = X.applyPlan(X.S, d, cfg, X.outputTabs(X.S, cfg)).map(st => st.note).join(" ");
+  assert.match(notes, /empty groups claim/);
+});

@@ -24,6 +24,8 @@ on Consumers) and API Gateway on Konnect (Kong Identity apps with principals). R
 - Runners for AI Gateway 1.x, A2A agents and MCP servers, Dev Portal applications, Okta/Entra/AD FS claim shapes
   (Keycloak standing in), and self-managed AI Gateway 2.x (`deck ai sync`).
 - Bulk: `deck gateway validate --online` on every runtime class.
+- AI-1 and AI-2 were run with the earlier LLM plan (fixed one-hour token window). Since v1.9.0 the plan is a monthly cost
+  budget plus a per-minute cap: re-run them to check the calendar window and target prices against a live data plane.
 
 ## AI Gateway 2.3
 

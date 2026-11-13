@@ -88,6 +88,11 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 | 3.16: ACL `allow_when` / `deny_when`, RLA and basic RL `identifier`/`limit_by: principal`, plugin `expressions` (`limit`, `minute`…) reading `principal.metadata` | API Gateway can drop Consumer Groups entirely with principals |
 | `condition` variables: `principal.id/display_name/metadata`, `consumer_group.names/ids`, `route.tags`, `service.tags`, `http.headers.*`, `kong.ctx.shared` | Scope global plugins to tagged APIs: `route.tags != null && "order-management" in route.tags` |
 | Gateway 3.16 rejects the whole config if `openid-connect` has `ssl_verify: false` | Always set `ssl_verify: true`; decK also requires `cache_tokens_salt` (`lab-verified`) |
+| Rate-limit `strategy: local` counts per data plane node; `cluster` needs a traditional, database-backed deployment (not hybrid, Konnect or DB-less) | Generated plans keep `local` and a note says to use `redis` with several nodes |
+| A vault reference must be the whole field value: `"Bearer {vault://…}"` reaches the provider as literal text (401, measured on AI Gateway 2.3.1) | Store `Bearer <key>` in the secret and reference it as the whole header value, on 1.x and 2.x |
+| `key-auth` reads the header value as is, with no `Bearer` prefix handling (AI Gateway source, `kong/plugins/key-auth/handler.lua`) | Claude Code sends `ANTHROPIC_API_KEY` as `x-api-key`: added to `key_names` when employees call models. Clients that send `Authorization: Bearer <key>` (Codex, Copilot, Cursor) don't match `key-auth` |
+| `ai-rate-limiting-advanced` calendar windows (`window_type: calendar`, `limits[].period: week/month`) and `tokens_count_strategy: cost` exist in the 2.2 and 2.3 schemas | The 2.x LLM plan is a monthly cost budget plus a per-minute token cap. Cost uses target `input_cost` / `output_cost` (USD per 1M tokens, developer.konghq.com/ai-gateway/model-cost-management/); a target without prices counts as free |
+| `ai-mcp-proxy` `logging.log_audits` and `log_statistics` default to `false` (3.15, 3.16, 2.2, 2.3 schemas); the 2.x MCP server entity exposes `config.logging.audits` and `payloads` only (kongctl 1.23) | MCP servers with an ACL get audits on: one log entry per ACL decision |
 
 ## AI Gateway 2.2 specifics
 
