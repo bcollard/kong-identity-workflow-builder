@@ -138,8 +138,6 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .notice{border:1px solid var(--warn);color:var(--text);border-radius:8px;padding:10px 14px;font-size:13px}
 .notice.info{border-color:var(--line)}
 .notice .btn{margin-left:10px}
-.stage{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
-@media (max-width:980px){.stage{grid-template-columns:minmax(0,1fr)}}
 .diagram{overflow-x:auto;padding:8px 8px 0}
 .diagram svg{display:block;width:100%;height:auto}
 .caption{border-top:1px solid var(--line);padding:12px 16px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px}
@@ -147,8 +145,8 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .caption h4{margin:0 0 2px;font-size:16px}
 .caption p{margin:0;color:var(--muted)}
 .ctl{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px}
-.inspector{padding:14px;display:flex;flex-direction:column;gap:8px}
-.kv{display:flex;flex-direction:column;gap:8px;margin:0}
+.inspector{border-top:1px solid var(--line);padding:12px 16px}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px;margin:0}
 .kv div{border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:var(--raised)}
 .kv div.changed{border-color:var(--accent);background:var(--accent-soft)}
 .kv dt{font:700 10px/1.2 var(--mono);letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
@@ -1724,11 +1722,10 @@ function renderResult(){
        :lab?`<span class="badge draft" title="The lab ran its own configuration for this identity flow; this generated file wasn't applied">Identity flow lab-tested · ${lab} · this file not applied</span>`
        :`<span class="badge draft">Generated draft · not tested end to end</span>`}
      <span class="share"><code id="sid" title="Scenario ID: the answers plus the version that generated this page">${scenarioId(S)}</code><button class="btn" id="bshare">Copy link</button></span></div></div>
-   <div class="stage">
-     <div class="panel"><div class="diagram" id="diagram"></div>
+   <div class="panel stage"><div class="diagram" id="diagram"></div>
        <div class="caption" aria-live="polite"><span class="stepno" id="sn"></span><div><h4 id="sh"></h4><p id="sp"></p></div></div>
-       <div class="ctl"><button class="btn primary" id="bp">Play</button><button class="btn" id="bprev">Previous</button><button class="btn" id="bnext">Next</button></div></div>
-     <aside class="panel inspector"><h3>Request context after this step</h3><dl class="kv" id="kv"></dl></aside>
+       <div class="ctl"><button class="btn primary" id="bp">Play</button><button class="btn" id="bprev">Previous</button><button class="btn" id="bnext">Next</button></div>
+     <details class="inspector fold"><summary><h3>Request context after this step</h3></summary><dl class="kv" id="kv"></dl></details>
    </div>
    <div class="grid2">
      <div class="panel"><h3>Summary</h3><div class="tablebox"><table><tbody>${summary.map(([k,v])=>`<tr><th scope="row">${k}</th><td>${esc(v)}</td></tr>`).join("")}</tbody></table></div></div>
