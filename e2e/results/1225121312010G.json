@@ -1,0 +1,68 @@
+{
+  "id": "v1.10.0-1225121312010GV",
+  "payload": "1225121312010G",
+  "date": "2026-11-25T20:46:33Z",
+  "builder": "v1.10.1",
+  "environment": "Self-managed AI Gateway 2.4.0 (aigw-master build) data plane on kind, DB-less, config lowered by ai-deck-converter v0.45.0; called over HTTPS (default certificate); Keycloak employees; mock LLM and A2A agent",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "18c5626eecd297"
+  },
+  "passed": 5,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "substitution",
+      "what": "auth_strategies(employees-auth).issuer → lab Keycloak realm"
+    },
+    {
+      "kind": "substitution",
+      "what": "agent kongair url http://kongair-agent.internal:10000/ → lab mock A2A agent"
+    },
+    {
+      "kind": "substitution",
+      "what": "policy trim-agent-card body_filter placeholder → no-op (skill trimming is not under test)"
+    },
+    {
+      "kind": "substitution",
+      "what": "subscription group a2a-sub-kongair → ai-sub-gpt-large (a group alice has in the lab Keycloak realm)"
+    }
+  ],
+  "checks": [
+    {
+      "step": "3",
+      "check": "no token → 401 (anonymous fallback → ACL)",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "garbage token → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "alice (subscription group in the token) → 200",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "bob (none of the gateway's groups) → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "8-10",
+      "check": "agent card comes from the upstream (mock agent), URL rewritten to the gateway",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    }
+  ]
+}

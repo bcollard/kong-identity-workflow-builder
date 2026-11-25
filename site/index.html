@@ -277,6 +277,9 @@ const VAULT = {
   "static_secret":{label:"API key or token",tpl:"static_secret",auth:"static",slug:"internal"}};
 const oidcLike = s=>s.cred==="oidc"||s.cred==="cc";
 const d0issuer = s => s.idp ? IDP[s.idp].issuer : "";
+/** Per-caller LLM budget key: the principal on AI Gateway 2.3+ (all its credentials share one budget), else the (virtual) credential. */
+const llmUnit = s=>s.record==="principals"&&aigwAtLeast(s,3)?"principal":"credential";
+const llmPartition = s=>llmUnit(s)==="principal"?"{ type: principal, key: id, partition_by: true }":"{ type: credential, partition_by: true }";
 /** rate-limiting-advanced identifier for a per-caller limit: the Consumer, the 3.16 principal, or the (virtual) credential. */
 const hitIdentifier = s=>s.record==="consumers"?"consumer":(s.record==="principals"&&!isAI(s)&&gw316(s))?"principal":"credential";
 
@@ -288,8 +291,8 @@ const STEPS = [
  {id:"deploy",title:"Control plane",ask:"Where is the control plane?",help:s=>"<b>Kong Identity principals</b> are stored in a Konnect directory and looked up by Konnect-connected data planes only. A self-managed control plane can still validate Kong Identity tokens as a plain OIDC issuer.",options:s=>[
    {v:"konnect",label:"Konnect",s:"Hybrid or dedicated cloud data planes",tag:"rec",tagText:"Recommended"},
    {v:"self",label:"Self-managed",s:isAI(s)?"AI Gateway entities applied with deck ai sync or the AI Manager UI":"Kong Gateway with its own control plane (decK, Admin API, KIC)"}]},
- {id:"version",title:"Gateway version",ask:"Which version runs the data planes?",help:s=>isAI(s)?"2.4 lets model and agent ACLs read token claims (<b>access_token.claims</b> in CEL), reads API keys sent as <b>Authorization: Bearer</b> (self-managed only for now) and answers 401 for a missing token on group ACLs. 2.3 adds <b>Token Vault</b> upstream credentials and CEL <b>allow_when</b> ACLs on MCP servers. Token Vault is Konnect only.":"3.16 adds ACL <b>allow_when</b>, plugin <b>expressions</b> (limits read from principal metadata), <b>principal</b> rate-limit identifiers and OpenTelemetry principal attributes. Principals themselves need 3.15.",options:s=>isAI(s)?[
-   {v:"2.4",label:"AI Gateway 2.4",s:"Group-claim ACLs on models and agents, Bearer API keys, 401 for a missing token on group ACLs",tag:"rec",tagText:"Recommended"},
+ {id:"version",title:"Gateway version",ask:"Which version runs the data planes?",help:s=>isAI(s)?"2.4 lets model and agent ACLs read token claims (<b>access_token.claims</b> in CEL), reads API keys sent as <b>Authorization: Bearer</b> (self-managed only for now) and answers 401 for a missing token on agents with a group ACL. 2.3 adds <b>Token Vault</b> upstream credentials and CEL <b>allow_when</b> ACLs on MCP servers. Token Vault is Konnect only.":"3.16 adds ACL <b>allow_when</b>, plugin <b>expressions</b> (limits read from principal metadata), <b>principal</b> rate-limit identifiers and OpenTelemetry principal attributes. Principals themselves need 3.15.",options:s=>isAI(s)?[
+   {v:"2.4",label:"AI Gateway 2.4",s:"Group-claim ACLs on models and agents, Bearer API keys, 401 for a missing token on agents with a group ACL",tag:"rec",tagText:"Recommended"},
    {v:"2.3",label:"AI Gateway 2.3",s:"Token Vault for MCP upstreams, allow_when on MCP servers"},
    {v:"2.2",label:"AI Gateway 2.2",s:"Auth strategies, principals, CEL ACLs on models and agents"}]:[
    {v:"3.16",label:"Kong Gateway 3.16",s:"Principals with metadata-driven ACLs and limits",tag:"rec",tagText:"Recommended"},
@@ -373,7 +376,7 @@ const STEPS = [
      {v:"app-cond",label:"Per-application plan",s:s.record==="consumers"?"rate-limiting-advanced scoped to the mapped Consumer.":"rate-limiting-advanced with condition principal.id == the application ID.",tag:"nocg",tagText:"No CG"}];
    if(ai) return [
      {v:"none",label:"No plan",s:"Only access control."},
-     {v:"llm",label:"LLM token budget per tier",s:"Global ai-rate-limiting-advanced, rules per tier-CG, per caller credential: a monthly cost budget (calendar window, prices on the targets) and a per-minute token cap.",tag:"cg",tagText:"tier-CG",
+     {v:"llm",label:"LLM token budget per tier",s:`Global ai-rate-limiting-advanced, rules per tier-CG, per caller (${llmUnit(s)==="principal"?"principal: shared by all its credentials":"credential"}): a monthly cost budget (calendar window, prices on the targets) and a per-minute token cap.`,tag:"cg",tagText:"tier-CG",
       disabled:s.target!=="models"?"AI rate limiting isn't available on agents or MCP servers (2.2 and 2.3).":null},
      {v:"mcp-hits",label:"Hit limit on the MCP path",s:"rate-limiting-advanced per caller on the MCP route. It counts every MCP message (initialize, tools/list, notifications, tools/call), so size the limit for whole sessions.",tag:"nocg",tagText:"No CG",
       disabled:s.target!=="mcp"?"MCP servers only.":null}];
@@ -512,6 +515,7 @@ function derive(s){
   // warnings
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model, agent or MCP server. Several issuers: list them on that strategy (issuers_allowed + extra_jwks_uris) and map callers on a claim unique across issuers, or give the other issuer its own model.");
   if(!ai && gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
+  if(ai && s.deploy==="self") warns.push("AI Gateway 2.x routes default to protocols [https], and deck ai sync sets none: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS.");
   if(isAIany(s) && s.caller==="employees" && s.target==="models"){
     if(s.cred==="apikey"&&bearerKeys(s)) notes.push("Coding agents send the key in their own header. Claude Code uses x-api-key (ANTHROPIC_API_KEY); Codex, GitHub Copilot and Cursor send Authorization: Bearer <key>. key_names lists both headers, and header_auth_schemes: [Bearer] (AI Gateway 2.4) strips the scheme. A value without the scheme, like x-api-key, is read as is.");
     else if(s.cred==="apikey") notes.push(`Coding agents send the key in their own header. Claude Code uses x-api-key (ANTHROPIC_API_KEY), so key_names lists it. key-auth reads the header value as is, so tools that send Authorization: Bearer <key> (Codex, GitHub Copilot, Cursor) don't match: give them OIDC tokens, or a custom header if the tool has that setting.${aigw24(s)?" AI Gateway 2.4 key-auth can strip the Bearer scheme (header_auth_schemes), but Konnect key-auth strategies don't accept that field yet; a self-managed gateway (deck ai sync) does.":""}`);
@@ -536,10 +540,17 @@ function derive(s){
     if(s.idp==="adfs") warns.push("AD FS sends a single group as a string, not a list: the allow_when \"in\" test then fails and the caller gets 403. Send groups as a list, or test the string with ==.");
   }
   if(ai && s.access==="meta") notes.push(`${tgt.kind==="model"?"Model":tgt.kind==="agent"?"Agent":"MCP server"} access.acls.allow_when needs kongctl 1.23+ (AI Gateway runtime ${s.target==="mcp"?"2.3":"2.2"}+). One rule type per ACL: allow_when replaces allow.`);
-  if(ai && aigw24(s) && s.access==="subcg") warns.push("AI Gateway 2.4 answers 401 for a missing or unknown token: an anonymous caller has no groups, and the 2.4 ACL answers 401 for it (2.3 and earlier answered 403).");
-  else if(ai) warns.push(s.access==="subcg"||s.access==="meta"||(s.access==="claimacl"&&s.target!=="mcp")
-    ? "AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first."
-    : "AI Gateway answers 401 for a missing or unknown token: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
+  // Missing or unknown token. The converter drops the anonymous fallback on a model with one auth strategy and never adds one to
+  // an MCP server, so the auth plugin answers 401 (lab-verified on 2.3.2, Konnect). Agents keep the fallback: their ACL answers.
+  if(ai) warns.push(s.target==="models"
+      ? "AI Gateway answers 401 for a missing or unknown token on a model: with one auth strategy there is no anonymous fallback, so the auth plugin rejects the call itself."
+    : s.target==="mcp"
+      ? "AI Gateway answers 401 for a missing or unknown token on an MCP server: MCP servers get no anonymous fallback, so the auth plugin rejects the call itself."
+    : s.access==="subcg"&&aigw24(s)
+      ? `AI Gateway 2.4 answers 401 for a missing or unknown token on an agent: the anonymous fallback has no groups, and the 2.4 ACL answers 401 for it (2.3 and earlier answered 403).${cl?" A valid token with none of the gateway's groups gets 401 too: consumer_groups_optional is false, so it falls back to anonymous.":""}`
+    : s.access==="subcg"||s.access==="meta"||s.access==="claimacl"
+      ? "AI Gateway answers 403 (not 401) for a missing or unknown token on an agent: the anonymous fallback hits the ACL first."
+      : "AI Gateway answers 401 for a missing or unknown token on an agent: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
   if(ai&&co&&oidcLike(s)) notes.push("A valid token whose claim matches no AI Consumer is rejected like a missing token (consumer_optional: false): add the AI Consumer before the caller's first request.");
   if(cl&&groups.length&&s.access!=="subcg") notes.push("Token groups are optional (consumer_groups_optional: true): callers with no known group still get through; plans and BU attribution apply to group members only.");
   if(!ai && auth.plugin==="openid-connect") warns.push("Gateway 3.16 rejects the config if openid-connect has ssl_verify: false. Keep it true and set cache_tokens_salt for decK.");
@@ -673,7 +684,7 @@ function buildSeq(s,d){
   }
   for(const r of rl){
     if(r.sub==="MCP hits"){ steps.push({f:prev,t:r.id,l:`${hitIdentifier(s)} · 100 hits / min`,h:"Hit limit on the MCP path",p:"rate-limiting-advanced counts every MCP message on this route, per caller. Over the limit returns 429.",set:{decision:"rate-limiting-advanced: within limit"}}); prev=r.id; continue; }
-    const txt = r.sub==="token budget"?(d.ai1?"CG ai-tier-standard · identifier credential":"tier rule · per credential · 50 USD / month + 200k tokens / min"):r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
+    const txt = r.sub==="token budget"?(d.ai1?"CG ai-tier-standard · identifier credential":`tier rule · per ${llmUnit(s)} · 50 USD / month + 200k tokens / min`):r.sub==="API plan"?(d.plans.includes("tier-meta")?"limit = principal.metadata.rl_per_5s":"CG tier-bronze · 100 / 5 s"):(d.plans.includes("bu-meta")?"minute = principal.metadata.bu_rl_minute":"BU-CG · 200 / minute");
     steps.push({f:prev,t:r.id,l:txt,h:r.sub==="token budget"?"LLM token budget":r.sub==="API plan"?"API usage plan (API owner)":"BU-wide plan (org admin)",p:r.sub==="token budget"?(d.ai1?"ai-rate-limiting-advanced scoped to the tier group, one counter per credential (llm_providers mode).":"One global policy; its rules match tier groups, so a caller in several groups never conflicts. Cost comes from the prices on the target; prompt tokens are estimated before the call and corrected from the provider's usage after it."):"Over the limit returns 429.",set:{decision:"acl: allowed\n"+r.label+": within limit"}}); prev=r.id;
   }
   steps.push({f:prev,t:ai?"px":"up",l:ai?"":"proxied",h:ai?"Gateway-side protocol handling":"Proxied",p:""});
@@ -846,11 +857,11 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
 ${aigw24(s)?"":"      identifier: credential\n"}      strategy: local                # one count per data plane node: use redis with several nodes
       policies:
         - match: [{ type: consumer_group, key: name, values: [ai-tier-standard] },
-                  { type: credential, partition_by: true }]
+                  ${llmPartition(s)}]
           window_type: calendar
-          limits: [{ limit: 50, period: month, tokens_count_strategy: cost }]       # 50 USD per caller per month
+          limits: [{ limit: 50, period: month, month_day: 1, tokens_count_strategy: cost }]   # 50 USD per caller per month, from the 1st
         - match: [{ type: consumer_group, key: name, values: [ai-tier-standard] },
-                  { type: credential, partition_by: true }]
+                  ${llmPartition(s)}]
           window_type: sliding
           limits: [{ limit: 200000, window_size: 60, tokens_count_strategy: total_tokens }]   # burst cap per minute`);
     if(s.target==="a2a") pol.push(`  - ref: trim-agent-card          # skill allowance from the JWT claim allowed_skills
@@ -916,7 +927,7 @@ ${aigw24(s)?"":"      identifier: credential\n"}      strategy: local           
       const consSelf = d.co?`consumers:
   - name: ${d.who.name}
     type: ${d.auth.plugin==="key-auth"?"api-key":"oauth"}
-${d.auth.plugin==="key-auth"?`    credentials: [{ name: ${d.who.name}-key, type: api-key, api_key: "{vault://env/${d.who.name.toUpperCase().replace(/[^A-Z0-9]/g,"_")}_KEY}" }]\n`:`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${d.groups.length?`    consumer_groups: [${d.groups.map(g=>g.name).join(", ")}]\n`:""}`:"";
+${d.auth.plugin==="key-auth"?`    credentials: [{ name: ${d.who.name}-key, type: api-key, api_key: "<generated key>" }]   # stored as is: key-auth credentials don't resolve vault references\n`:`    custom_id: "<${d.credClaim||"sub"} value>"\n`}${d.groups.length?`    consumer_groups: [${d.groups.map(g=>g.name).join(", ")}]\n`:""}`:"";
       const cgsSelf = d.groups.map(g=>`  - { name: ${g.name}, display_name: "${g.kind} · ${g.owner}" }`).join("\n");
       const prov = s.target==="models"?`model_providers:
   - name: openai

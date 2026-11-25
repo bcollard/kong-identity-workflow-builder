@@ -178,10 +178,10 @@ test("no dead ends: every reachable visible step offers at least one enabled opt
 });
 
 test("AI Gateway 2.x LLM budget: monthly cost budget, burst cap, prices on the target, per-node counter note", () => {
-  for (const version of ["2.2", "2.3"]) {
+  for (const version of ["2.2", "2.3", "2.4"]) {
     reset({ product: "ai", deploy: "self", version, caller: "apps", target: "models", cred: "cc", idp: "okta", record: "claims", access: "claimacl", plans: ["llm"], analytics: ["prom"] });
     const d = X.derive(X.S), y = X.genDeclarative(X.S, d).text;
-    assert.match(y, /window_type: calendar/); assert.match(y, /period: month, tokens_count_strategy: cost/);
+    assert.match(y, /window_type: calendar/); assert.match(y, /period: month, month_day: 1, tokens_count_strategy: cost/);   // month_day is required by the plugin's calendar validator (not in the JSON schema)
     assert.match(y, /input_cost: 2, output_cost: 8/);
     assert.ok(d.notes.some(n => /strategy: local/.test(n) && /redis/.test(n)), version);
   }
@@ -196,12 +196,16 @@ test("AI Gateway 2.4: group-claim ACLs on models and agents, 401 for a missing t
   const d = X.derive(X.S), y = X.genDeclarative(X.S, d).text;
   assert.match(y, /allow_when: \['has\(access_token\.claims\.groups\) && "gpt-large-users" in access_token\.claims\.groups'\]/);
   assert.doesNotMatch(y, /identifier: credential/, "identifier is deprecated and ignored in policies mode on 2.4");
-  assert.ok(d.warns.some(w => /403 \(not 401\)/.test(w)), "allow_when ACLs answer 403 to the anonymous fallback");
-  reset({ ...base, version: "2.4", access: "subcg", plans: ["llm"], analytics: ["prom"] });
-  assert.ok(X.derive(X.S).warns.some(w => /2\.4 answers 401/.test(w)), "group ACLs answer 401 to an anonymous caller on 2.4");
+  assert.ok(d.warns.some(w => /401 for a missing or unknown token on a model/.test(w)), "models: no anonymous fallback (lab-verified on 2.3.2)");
   reset({ ...base, version: "2.3", access: "subcg", plans: ["llm"], analytics: ["prom"] });
-  const d3 = X.derive(X.S);
-  assert.match(X.genDeclarative(X.S, d3).text, /identifier: credential/); assert.ok(d3.warns.some(w => /403 \(not 401\)/.test(w)));
+  assert.match(X.genDeclarative(X.S, X.derive(X.S)).text, /identifier: credential/);
+  // agents keep the anonymous fallback: their ACL answers it
+  const agent = { ...base, target: "a2a", plans: ["none"], analytics: ["prom"] };
+  const warn = st => { reset({ ...agent, ...st }); return X.derive(X.S).warns.join(" "); };
+  assert.match(warn({ version: "2.4", access: "subcg" }), /2\.4 answers 401/, "group ACLs answer 401 to the anonymous fallback on 2.4");
+  assert.match(warn({ version: "2.3", access: "subcg" }), /403 \(not 401\)/);
+  assert.match(warn({ version: "2.4", access: "claimacl" }), /403 \(not 401\)/, "allow_when ACLs answer 403 to the anonymous fallback");
+  assert.match(warn({ version: "2.4", access: "none" }), /request-termination/);
 });
 
 test("MCP tool ACLs on a token claim need openid-connect to hand the claims over (AI Gateway 2.3+, Kong Gateway 3.16)", () => {

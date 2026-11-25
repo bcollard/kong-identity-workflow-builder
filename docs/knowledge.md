@@ -78,6 +78,11 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   **426 Upgrade Required** (`lab-verified` on 3.16.0.0).
 - `deck gateway sync` needs a database-backed control plane: a DB-less node answers 405 (`cannot create or update
   'consumers' entities when not using a database`). DB-less nodes load the same file with `POST /config` (`lab-verified`).
+- AI Gateway 2.x routes also default to `protocols: [https]` (2.2.0, 2.3.2, 2.4.0 images), and the `deck ai sync` lowered
+  config sets none: plain HTTP gets 426 on a self-managed AI Gateway (`lab-verified` on 2.3.2 and 2.4.0). Konnect AI Gateways
+  with an `http` proxy URL answered plain HTTP in the lab.
+- `key-auth` credential `key` is not referenceable (`kong/plugins/key-auth/daos.lua`): a `{vault://…}` value is stored as
+  literal text and no client key matches (`lab-verified` on 2.4.0). The self-managed AI Consumer key is a placeholder.
 - `kong.client.get_credential().id` is the credential's UUID; for Consumer records, log `kong.client.get_consumer().username`
   to get a readable caller label.
 
@@ -96,9 +101,9 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 | Rate-limit `strategy: local` counts per data plane node; `cluster` needs a traditional, database-backed deployment (not hybrid, Konnect or DB-less) | Generated plans keep `local` and a note says to use `redis` with several nodes |
 | A vault reference must be the whole field value: `"Bearer {vault://…}"` reaches the provider as literal text (401, measured on AI Gateway 2.3.1) | Store `Bearer <key>` in the secret and reference it as the whole header value, on 1.x and 2.x |
 | `key-auth` reads the header value as is, with no `Bearer` prefix handling (AI Gateway source, `kong/plugins/key-auth/handler.lua`). AI Gateway 2.4 adds `header_auth_schemes` (`min_ai_gateway_version = "2.4"`): a value that starts with a listed scheme loses it, any other value is read as is. The Konnect key-auth strategy schema is closed and doesn't list the field yet; `deck ai sync` passes strategy `config` through | Claude Code sends `ANTHROPIC_API_KEY` as `x-api-key`: added to `key_names` when employees call models. On self-managed 2.4, `key_names` also lists `authorization` with `header_auth_schemes: [Bearer]` for Codex, Copilot and Cursor. Elsewhere those clients don't match `key-auth` |
-| `acl` with `include_consumer_groups: true`: an anonymous Consumer without groups got 403; AI Gateway 2.4 answers 401 (kong-ee `aigw-master` changelog, `kong/plugins/acl/handler.lua`) | On 2.4 a missing or unknown token gets 401 with a sub-CG ACL. `allow_when` / `deny_when` ACLs still answer 403 to any caller they don't allow, the anonymous fallback included (`acl/handler.lua`) |
+| `acl` with `include_consumer_groups: true`: an anonymous Consumer without groups got 403; AI Gateway 2.4 answers 401 (kong-ee `aigw-master` changelog, `kong/plugins/acl/handler.lua`) | On 2.4 a missing or unknown token on an agent (the only target that keeps the anonymous fallback) gets 401 with a sub-CG ACL. `allow_when` / `deny_when` ACLs still answer 403 to any caller they don't allow, the anonymous fallback included (`acl/handler.lua`) |
 | `ai-mcp-proxy` `acl_attribute_type: oauth_access_token` reads the claims in `kong.ctx.shared.ai_mcp_oauth2`. `openid-connect` fills it in Kong Gateway 3.16 and AI Gateway 2.3+, not in 3.15 or AI Gateway 2.2 (`openid-connect/handler.lua` on `release/3.16.0.2`, `release/3.15.0.10`, `aigw-release/2.2.3`; converter feature `OIDCProtectedResourceMetadata` = 2.3) | MCP tool ACLs on a groups claim are offered on 3.16 and AI Gateway 2.3+ only: elsewhere they match nothing and deny every call |
-| `ai-rate-limiting-advanced` calendar windows (`window_type: calendar`, `limits[].period: week/month`) and `tokens_count_strategy: cost` exist in the 2.2 and 2.3 schemas | The 2.x LLM plan is a monthly cost budget plus a per-minute token cap. Cost uses target `input_cost` / `output_cost` (USD per 1M tokens, developer.konghq.com/ai-gateway/model-cost-management/); a target without prices counts as free |
+| `ai-rate-limiting-advanced` calendar windows (`window_type: calendar`, `limits[].period: week/month`) and `tokens_count_strategy: cost` exist in the 2.2 and 2.3 schemas | The 2.x LLM plan is a monthly cost budget plus a per-minute token cap. A monthly limit needs `month_day` (the plugin's calendar validator, Lua code not visible in the JSON schema; Konnect answers 400 `limits[1].month_day is required when period is 'month'`, `lab-verified` on 2.3.2): the builder sets `month_day: 1`. Cost uses target `input_cost` / `output_cost` (USD per 1M tokens, developer.konghq.com/ai-gateway/model-cost-management/); a target without prices counts as free |
 | `ai-mcp-proxy` `logging.log_audits` and `log_statistics` default to `false` (3.15, 3.16, 2.2, 2.3 schemas); the 2.x MCP server entity exposes `config.logging.audits` and `payloads` only (kongctl 1.23) | MCP servers with an ACL get audits on: one log entry per ACL decision |
 
 ## AI Gateway 2.2 specifics
@@ -110,11 +115,11 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   models with different strategy sets get separate routes (Kong source). One strategy accepts several issuers with
   `issuers_allowed` + `extra_jwks_uris` (passed through to the plugin), except on MCP servers with `access.metadata`,
   which lower to `ai-mcp-oauth2` and drop both fields. With several issuers, map callers on a claim unique across them.
-- Missing or unknown tokens: the converter adds an `anonymous` fallback consumer carrying a `request-termination` (401).
-  With a model ACL the ACL rejects it first (**403**, `lab-verified` on a single-strategy model); without one the
-  termination answers **401** (`lab-verified`). On 2.4 a group ACL answers 401 too; `allow_when` still answers 403 (see AI Gateway 2.4). Konnect now pins `ai-deck-converter` v0.32.7 (was v0.27.0). On converter
-  main a model with a single strategy gets no fallback and the auth plugin answers 401 itself; agents keep the fallback and
-  MCP servers never get one. Whether v0.32.7 includes the model change is unverified: re-run AI-1 / AI-2 to check.
+- Missing or unknown tokens. A model with one auth strategy (what the builder generates) gets no anonymous fallback: the
+  auth plugin answers **401** itself, with or without an ACL (`lab-verified` 2026-11-25 on Konnect with 2.3.2 and 2.4.0 data
+  planes; converter v0.32.1 and v0.45.0 both drop it, `withoutAnonymousFallback`). The 403 measured in October came from an
+  older Konnect converter. Agents keep the `anonymous` fallback consumer with a `request-termination` (401): with an ACL the
+  ACL answers it first (403; 401 on 2.4 for a group ACL, see AI Gateway 2.4). MCP servers never get a fallback.
 - A valid token whose `consumer_claims` value matches no AI Consumer is rejected the same way (`consumer_optional`
   defaults to false); it is never proxied (Kong source).
 - Model and agent `access.acls` take exactly one of `allow`, `deny`, `allow_when`, `deny_when`; the CEL forms need runtime
@@ -127,7 +132,8 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   `match_consumer`, `match_consumer_groups`, `error_on_miss`).
 - `ai-rate-limiting-advanced`: no `principal` identifier; rules use `match` on `consumer_group` (`key: name`) plus
   `{type: credential, partition_by: true}` for per-caller budgets (the `credential` and `service` match types need
-  runtime 2.2). The counter key comes only from `partition_by` matchers; `identifier` is ignored in `policies` mode.
+  runtime 2.2; `principal` needs 2.3, see AI Gateway 2.3). The counter key comes only from `partition_by` matchers;
+  `identifier` is ignored in `policies` mode.
   Not allowed on agents or MCP servers.
   One global policy with one rule per tier avoids the one-instance-per-plugin limit.
 - Policies accept `condition` (2.1+) but there are no plugin `expressions` in 2.2.
@@ -146,8 +152,9 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 ## AI Gateway 2.3
 
 AI Gateway 2.3.0 shipped on 2026-11-04 and is the Konnect default runtime. With version 2.3 the builder sets
-`min_runtime_version: "2.3"` on the gateway (kongctl and Terraform), offers `allow_when` on MCP servers, and offers Token
-Vault upstream credentials. Not used yet (backlog): the rate-limit and expression items below. What 2.3 adds (Kong source,
+`min_runtime_version: "2.3"` on the gateway (kongctl and Terraform), offers `allow_when` on MCP servers, offers Token
+Vault upstream credentials, and partitions principals' LLM budgets by `principal`. Not used yet (backlog): per-tier limits
+from metadata, `custom_key` and policy expressions. What 2.3 adds (Kong source,
 kongctl docs, Konnect AI Gateway OpenAPI):
 
 - MCP server ACLs: `access.acls`, `default_tool_acls` and per-tool ACLs accept `allow_when` / `deny_when`. A server-level
@@ -155,7 +162,10 @@ kongctl docs, Konnect AI Gateway OpenAPI):
   `passthrough-listener`, a server-level `allow_when` gates tools, not the MCP connection.
 - CEL can read `principal.groups` and `principal.type`.
 - `ai-rate-limiting-advanced`: `match: [{type: principal, key: id | display_name | metadata.<name>, partition_by: true}]`
-  and `custom_key` (with `expressions.custom_key`). Still not allowed on agents or MCP servers.
+  and `custom_key` (with `expressions.custom_key`). Still not allowed on agents or MCP servers. With principals on 2.3+ the
+  builder partitions the LLM budget by `principal` (`key: id`): every credential of a principal (two Kong Identity clients
+  linked to it) draws from one budget, where `credential` gives each its own (`lab-verified` 2026-11-25 on Konnect, 2.3.2
+  and 2.4.0 data planes).
 - Policies take `expressions` (CEL per field, static fallback).
 - MCP servers: native `rate_limiting.limits[{method | tool, limit, window_size}]` per node, listener types only.
 - `openid-connect` strategies: `credential_claims`, `principals.jit.{all_claims, claims}` (claims sent to the principal lookup).
@@ -210,10 +220,14 @@ self-managed gateways, and drops `identifier` from the LLM policy. Sources: the 
   dynamic fields and ACL `allow_when` / `deny_when` (`kong/runloop/plugin_condition.lua`). The Konnect CEL validator declares
   the same variables (`internal/cel/validator.go`). The builder emits
   `allow_when: ['has(access_token.claims.<groups>) && "<model>-users" in access_token.claims.<groups>']` on models and agents.
-  Not run in a lab. A claim sent as a string (AD FS with one group) fails the `in` test and the caller gets 403.
+  `lab-verified` on a self-managed 2.4.0 data plane (Keycloak: a member 200, a non-member 403, no groups claim 403, no token
+  401). A claim sent as a string (AD FS with one group) fails the `in` test and the caller gets 403.
 - `acl` anonymous fix: 401 instead of 403 for an anonymous Consumer without groups, on group lists only; `allow_when` keeps 403
-  (see the plugin rules table).
-- `key-auth` / `key-auth-enc` `header_auth_schemes` (see the plugin rules table).
+  (see the plugin rules table). `lab-verified` on agents (self-managed): a missing token gets 401 on 2.4.0 and 403 on 2.3.2.
+  A valid token with none of the gateway's groups gets the same answer: with `consumer_groups_optional: false` the
+  `openid-connect` plugin fails and falls back to anonymous.
+- `key-auth` / `key-auth-enc` `header_auth_schemes` (see the plugin rules table). `lab-verified` on a self-managed 2.4.0 data
+  plane: `x-api-key: <key>`, `apikey: <key>` and `Authorization: Bearer <key>` all reach the model, a wrong Bearer key gets 401.
 - `openid-connect` `principals.actors` (`enabled`, `principal_by`, `sources`, e.g. `act_chain`): resolves the agents acting
   for the user as principals; read with `kong.client.get_actors()` and CEL `actors` (first item = the caller). Not in the
   builder yet (backlog: on-behalf-of).
@@ -343,3 +357,7 @@ Only Keycloak and Kong Identity were run in the lab; the others are documented d
 | AI-3 | AI · agents · A2A · client credentials Kong Identity · principals · sub-CG · no plan |
 | API-1 | API · apps · API keys · principals · sub-CG · tier-CG (± BU-CG) |
 | API-2 | API · employees · OIDC Keycloak · token claims · sub-CG · BU-CG |
+
+Re-run on 2026-11-25 (builder v1.10.1, results in `e2e/results/`): AI-1 on 2.3.2 and AI-2 on 2.3.2 and 2.4.0 (Konnect, with
+the monthly cost budget and the per-principal partition), plus self-managed 2.4.0 Bearer API keys, 2.4.0 claim `allow_when`
+on a model, and agents with a sub-CG ACL on 2.4.0 and 2.3.2.

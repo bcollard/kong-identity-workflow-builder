@@ -24,8 +24,7 @@ on Consumers) and API Gateway on Konnect (Kong Identity apps with principals). R
 - Runners for AI Gateway 1.x, A2A agents and MCP servers, Dev Portal applications, Okta/Entra/AD FS claim shapes
   (Keycloak standing in), and self-managed AI Gateway 2.x (`deck ai sync`).
 - Bulk: `deck gateway validate --online` on every runtime class.
-- AI-1 and AI-2 were run with the earlier LLM plan (fixed one-hour token window). Since v1.9.0 the plan is a monthly cost
-  budget plus a per-minute cap: re-run them to check the calendar window and target prices against a live data plane.
+- AI-3 (A2A agents with Kong Identity principals on Konnect) has no recorded run: the Konnect runner only covers models.
 
 ## AI Gateway 2.3
 
@@ -35,8 +34,8 @@ The version step offers 2.3 (since v1.8.0): MCP `allow_when` and Token Vault use
 - Token Vault for model providers (`token_vault` on `model_providers`), selectors on shared credentials (one key per team),
   several upstream MCP servers behind one `listener`, Redis credential cache.
 - MCP tool ACLs with CEL.
-- LLM token budgets per principal (`match: {type: principal, partition_by: true}`) and per-tier limits read from principal
-  metadata (`key: metadata.<name>`), without tier-CGs.
+- Per-tier LLM limits read from principal metadata (`key: metadata.<name>`), without tier-CGs. (Budgets per principal
+  are generated since v1.10.1 and lab-verified.)
 - MCP hit limits with the native `rate_limiting` block (per tool or method) next to `rate-limiting-advanced`.
 - Policy `expressions`, `credential_claims`, `principals.jit`.
 
@@ -44,8 +43,8 @@ The version step offers 2.3 (since v1.8.0): MCP `allow_when` and Token Vault use
 
 The version step offers 2.4 (since v1.10.0). Still to do:
 
-- Lab runs once a 2.4 image is published: groups-claim `allow_when` on models and agents (`access_token.claims`), 401 for a
-  missing token with a sub-CG ACL (403 with allow_when), Bearer API keys (`header_auth_schemes`) from Codex or Cursor, the LLM policy without `identifier`.
+- Lab runs on a published 2.4 image (the 2026-11-25 runs used an `aigw-master` build): claim `allow_when` on agents, the
+  Konnect side once Konnect accepts `min_runtime_version: "2.4"`, real Codex or Cursor clients (the lab used curl).
 - `header_auth_schemes` and `principals_cache` on Konnect auth strategies, once the Konnect schema lists them.
 - On-behalf-of with `openid-connect` `principals.actors` and CEL `actors` (agent acting for a user).
 - Konnect Explorer grouping by `principal.metadata` (2.4 sends it): BU reports without a BU group.

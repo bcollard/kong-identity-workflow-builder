@@ -1,0 +1,116 @@
+{
+  "id": "v1.10.0-121521252210010",
+  "payload": "12152125221001",
+  "date": "2026-11-25T17:12:29Z",
+  "builder": "v1.10.1",
+  "environment": "Konnect AI Gateway created for the run, AI Gateway 2.4.0 (aigw-master build) data plane on kind; Keycloak (employees) or the Kong Identity auth server created by the API script (apps); mock LLM upstream",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "0799116f37a9aa",
+    "api": "1d111ee818d661"
+  },
+  "passed": 10,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "env",
+      "what": "ai_gateway name acme-aigw → e2e-121521252210010"
+    },
+    {
+      "kind": "env",
+      "what": "hybrid data plane certificate and proxy URL added"
+    },
+    {
+      "kind": "env",
+      "what": "min_runtime_version 2.4 → 2.3 (Konnect accepts up to 2.3 today)"
+    },
+    {
+      "kind": "substitution",
+      "what": "auth_strategies(apps-auth).issuer https://<sub>.us.identity.konghq.com/auth/.well-known/openid-configuration → issuer of the Kong Identity auth server created by the generated API script"
+    },
+    {
+      "kind": "substitution",
+      "what": "model_providers(openai) Authorization {vault://env/openai-auth-header} → lab mock key (no vault on the lab data plane)"
+    },
+    {
+      "kind": "substitution",
+      "what": "model gpt-large target gpt-4.1 upstream → lab mock LLM"
+    },
+    {
+      "kind": "env",
+      "what": "API script: auth server and principal names made unique; ids and issuer exported for the next steps"
+    }
+  ],
+  "checks": [
+    {
+      "step": "1-2",
+      "check": "Kong Identity issues a client-credentials token (aud kong-gateway)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "no token → rejected",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "Keycloak token on a Kong Identity route → rejected",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "4-6",
+      "check": "app (principal metadata: subscription + tier, as group names) → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "app whose principal lacks the subscription group → gpt-large",
+      "expected": "403",
+      "actual": "403",
+      "pass": true
+    },
+    {
+      "step": "5-6",
+      "check": "Kong Identity client with no principal (error_on_miss)",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "app is metered by the standard-tier token budget (rate-limit headers)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "app's remaining budget decreases between calls",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "second client of the same principal → budget shared (partition by principal)",
+      "expected": "shared",
+      "actual": "shared",
+      "pass": true
+    },
+    {
+      "step": "8-10",
+      "check": "response comes from the upstream (mock LLM)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "id": "v1.10.0-121311131210031",
+  "payload": "12131113121003",
+  "date": "2026-11-25T17:16:22Z",
+  "builder": "v1.10.1",
+  "environment": "Konnect AI Gateway created for the run, AI Gateway 2.3.2 data plane on kind; Keycloak (employees) or the Kong Identity auth server created by the API script (apps); mock LLM upstream",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "06bb9056ebd68d"
+  },
+  "passed": 8,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "env",
+      "what": "ai_gateway name acme-aigw → e2e-121311131210031"
+    },
+    {
+      "kind": "env",
+      "what": "hybrid data plane certificate and proxy URL added"
+    },
+    {
+      "kind": "substitution",
+      "what": "auth_strategies(employees-auth).issuer https://keycloak.example.com/realms/acme/.well-known/openid-configuration → lab Keycloak realm"
+    },
+    {
+      "kind": "substitution",
+      "what": "model_providers(openai) Authorization {vault://env/openai-auth-header} → lab mock key (no vault on the lab data plane)"
+    },
+    {
+      "kind": "substitution",
+      "what": "model gpt-large target gpt-4.1 upstream → lab mock LLM"
+    }
+  ],
+  "checks": [
+    {
+      "step": "1-2",
+      "check": "Keycloak issues a token for alice (aud kong-gateway)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "no token → rejected",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "garbage token → rejected",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "4-6",
+      "check": "alice (ai-tier-standard, bu-finance) → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "alice is metered by the standard-tier token budget (rate-limit headers)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "alice's remaining budget decreases between calls",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "carol (premium tier: no rule in this gateway) is not metered",
+      "expected": "0",
+      "actual": "0",
+      "pass": true
+    },
+    {
+      "step": "8-10",
+      "check": "response comes from the upstream (mock LLM)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    }
+  ]
+}
