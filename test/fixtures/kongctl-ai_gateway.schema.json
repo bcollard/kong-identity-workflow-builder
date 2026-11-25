@@ -396,12 +396,12 @@
                 "additionalProperties": false
               },
               "url": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
-            "required": [
-              "url"
-            ],
             "additionalProperties": false
           },
           "display_name": {
@@ -480,12 +480,6 @@
                   "null"
                 ],
                 "properties": {
-                  "anonymous": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
                   "hide_credentials": {
                     "type": [
                       "boolean",
@@ -4584,12 +4578,12 @@
                     "additionalProperties": false
                   },
                   "url": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
-                "required": [
-                  "url"
-                ],
                 "additionalProperties": false
               },
               "datastores": {
@@ -5069,6 +5063,7 @@
                       "type": "object",
                       "properties": {
                         "acls": {
+                          "description": "Configure allow, deny, allow_when, or deny_when, including combinations.",
                           "type": "object",
                           "properties": {
                             "allow": {
@@ -5226,6 +5221,7 @@
                     "type": "string"
                   },
                   "acls": {
+                    "description": "Specify exactly one of allow, deny, allow_when, or deny_when.",
                     "type": "object",
                     "properties": {
                       "allow": {
@@ -5262,6 +5258,7 @@
                     }
                   },
                   "default_tool_acls": {
+                    "description": "Configure allow, deny, allow_when, or deny_when, including combinations.",
                     "type": "object",
                     "properties": {
                       "allow": {
@@ -5429,10 +5426,7 @@
                     ]
                   },
                   "route": {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
+                    "type": "object",
                     "anyOf": [
                       {
                         "type": "object",
@@ -6196,11 +6190,14 @@
                     "additionalProperties": false
                   },
                   "url": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
-                  "url"
+                  "route"
                 ],
                 "additionalProperties": false
               },
@@ -6721,6 +6718,7 @@
                       "type": "object",
                       "properties": {
                         "acls": {
+                          "description": "Configure allow, deny, allow_when, or deny_when, including combinations.",
                           "type": "object",
                           "properties": {
                             "allow": {
@@ -6878,6 +6876,7 @@
                     "type": "string"
                   },
                   "acls": {
+                    "description": "Specify exactly one of allow, deny, allow_when, or deny_when.",
                     "type": "object",
                     "properties": {
                       "allow": {
@@ -6914,6 +6913,7 @@
                     }
                   },
                   "default_tool_acls": {
+                    "description": "Configure allow, deny, allow_when, or deny_when, including combinations.",
                     "type": "object",
                     "properties": {
                       "allow": {
@@ -7069,10 +7069,7 @@
                     ]
                   },
                   "route": {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
+                    "type": "object",
                     "anyOf": [
                       {
                         "type": "object",
@@ -7762,6 +7759,9 @@
                     "additionalProperties": false
                   }
                 },
+                "required": [
+                  "route"
+                ],
                 "additionalProperties": false
               },
               "datastores": {
@@ -8270,6 +8270,7 @@
                     "type": "string"
                   },
                   "acls": {
+                    "description": "Specify exactly one of allow, deny, allow_when, or deny_when.",
                     "type": "object",
                     "properties": {
                       "allow": {
@@ -8306,6 +8307,7 @@
                     }
                   },
                   "default_tool_acls": {
+                    "description": "Configure allow, deny, allow_when, or deny_when, including combinations.",
                     "type": "object",
                     "properties": {
                       "allow": {
@@ -8501,10 +8503,7 @@
                     "additionalProperties": false
                   },
                   "route": {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
+                    "type": "object",
                     "anyOf": [
                       {
                         "type": "object",
@@ -9268,11 +9267,14 @@
                     "additionalProperties": false
                   },
                   "url": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
-                  "url"
+                  "route"
                 ],
                 "additionalProperties": false
               },
@@ -9793,6 +9795,7 @@
                       "type": "object",
                       "properties": {
                         "acls": {
+                          "description": "Configure allow, deny, allow_when, or deny_when, including combinations.",
                           "type": "object",
                           "properties": {
                             "allow": {
@@ -9905,10 +9908,7 @@
                     ]
                   },
                   "route": {
-                    "type": [
-                      "object",
-                      "null"
-                    ],
+                    "type": "object",
                     "anyOf": [
                       {
                         "type": "object",
@@ -10775,11 +10775,14 @@
                     "additionalProperties": false
                   },
                   "url": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
-                  "url",
+                  "route",
                   "tools_cache_ttl_seconds"
                 ],
                 "additionalProperties": false
@@ -11261,6 +11264,7 @@
                       "type": "object",
                       "properties": {
                         "acls": {
+                          "description": "Configure allow, deny, allow_when, or deny_when, including combinations.",
                           "type": "object",
                           "properties": {
                             "allow": {
@@ -23422,6 +23426,21 @@
           "config": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "datastores": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
           },
           "display_name": {
             "type": "string"

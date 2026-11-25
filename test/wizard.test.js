@@ -24,7 +24,7 @@ test("step ids are unique and every option has a label and a description", () =>
 test("version step: Kong Gateway versions for API Gateway and AI Gateway 1.x, AI Gateway runtimes for 2.x", () => {
   const vals = () => step("version").options(X.S).map(o => o.v);
   for (const product of ["api", "ai1"]) { reset({ product }); assert.ok(visible("version")); assert.deepEqual(JSON.parse(JSON.stringify(vals())), ["3.16", "3.15"]); }
-  reset({ product: "ai" }); assert.ok(visible("version")); assert.deepEqual(JSON.parse(JSON.stringify(vals())), ["2.3", "2.2"]);
+  reset({ product: "ai" }); assert.ok(visible("version")); assert.deepEqual(JSON.parse(JSON.stringify(vals())), ["2.4", "2.3", "2.2"]);
   reset({ product: "api", version: "3.16" }); X.S.product = "ai"; X.prune(); assert.equal(X.S.version, null, "a Kong Gateway version is dropped for AI Gateway 2.x");
 });
 
@@ -185,6 +185,44 @@ test("AI Gateway 2.x LLM budget: monthly cost budget, burst cap, prices on the t
     assert.match(y, /input_cost: 2, output_cost: 8/);
     assert.ok(d.notes.some(n => /strategy: local/.test(n) && /redis/.test(n)), version);
   }
+});
+
+test("AI Gateway 2.4: group-claim ACLs on models and agents, 401 for a missing token on group ACLs, no rate-limit identifier", () => {
+  const base = { product: "ai", deploy: "self", caller: "employees", target: "models", cred: "oidc", idp: "keycloak", record: "claims" };
+  for (const version of ["2.2", "2.3"]) { reset({ ...base, version }); assert.ok(opt("access", "claimacl").disabled, `${version}: models can't read claims in allow_when`); }
+  reset({ ...base, version: "2.4" }); assert.ok(!opt("access", "claimacl").disabled);
+  reset({ ...base, version: "2.4", target: "a2a" }); assert.ok(!opt("access", "claimacl").disabled);
+  reset({ ...base, version: "2.4", access: "claimacl", plans: ["llm"], analytics: ["prom"] });
+  const d = X.derive(X.S), y = X.genDeclarative(X.S, d).text;
+  assert.match(y, /allow_when: \['has\(access_token\.claims\.groups\) && "gpt-large-users" in access_token\.claims\.groups'\]/);
+  assert.doesNotMatch(y, /identifier: credential/, "identifier is deprecated and ignored in policies mode on 2.4");
+  assert.ok(d.warns.some(w => /403 \(not 401\)/.test(w)), "allow_when ACLs answer 403 to the anonymous fallback");
+  reset({ ...base, version: "2.4", access: "subcg", plans: ["llm"], analytics: ["prom"] });
+  assert.ok(X.derive(X.S).warns.some(w => /2\.4 answers 401/.test(w)), "group ACLs answer 401 to an anonymous caller on 2.4");
+  reset({ ...base, version: "2.3", access: "subcg", plans: ["llm"], analytics: ["prom"] });
+  const d3 = X.derive(X.S);
+  assert.match(X.genDeclarative(X.S, d3).text, /identifier: credential/); assert.ok(d3.warns.some(w => /403 \(not 401\)/.test(w)));
+});
+
+test("MCP tool ACLs on a token claim need openid-connect to hand the claims over (AI Gateway 2.3+, Kong Gateway 3.16)", () => {
+  const base = { deploy: "self", caller: "employees", target: "mcp", cred: "oidc", idp: "okta", record: "claims" };
+  reset({ ...base, product: "ai", version: "2.2" }); assert.ok(opt("access", "claimacl").disabled);
+  reset({ ...base, product: "ai", version: "2.3" }); assert.ok(!opt("access", "claimacl").disabled);
+  reset({ ...base, product: "ai1", version: "3.15" }); assert.ok(opt("access", "claimacl").disabled);
+  reset({ ...base, product: "ai1", version: "3.16" }); assert.ok(!opt("access", "claimacl").disabled);
+});
+
+test("AI Gateway 2.4 key-auth reads Bearer keys on self-managed gateways; Konnect strategies don't take the field yet", () => {
+  const base = { product: "ai", version: "2.4", caller: "employees", target: "models", cred: "apikey", record: "consumers", access: "none", plans: ["none"], analytics: ["prom"] };
+  reset({ ...base, deploy: "self" });
+  let d = X.derive(X.S), y = X.genDeclarative(X.S, d).text;
+  assert.match(y, /key_names: \[apikey, x-api-key, authorization\]/); assert.match(y, /header_auth_schemes: \[Bearer\]/);
+  reset({ ...base, deploy: "self", version: "2.3" });
+  assert.doesNotMatch(X.genDeclarative(X.S, X.derive(X.S)).text, /header_auth_schemes/);
+  reset({ ...base, deploy: "konnect", analytics: ["konnect"] });
+  d = X.derive(X.S); y = X.genDeclarative(X.S, d).text;
+  assert.doesNotMatch(y, /header_auth_schemes/); assert.match(y, /min_runtime_version: "2\.4"/);
+  assert.ok(d.notes.some(n => /Konnect key-auth strategies don't accept that field yet/.test(n)));
 });
 
 test("MCP servers with an ACL: the apply steps list the access tests", () => {

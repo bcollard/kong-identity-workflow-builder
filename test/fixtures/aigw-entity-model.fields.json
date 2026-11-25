@@ -3,11 +3,19 @@
   "access": {
    "acls": {
     "allow": "scalar",
-    "deny": "scalar"
+    "allow_when": "scalar",
+    "deny": "scalar",
+    "deny_when": "scalar"
    },
    "auth_strategies": "scalar"
   },
   "config": {
+   "balancer": {
+    "algorithm": "scalar",
+    "hash_on_header": "scalar"
+   },
+   "ca_certificates": "scalar",
+   "certificates": "scalar",
    "logging": {
     "audits": "scalar",
     "max_payload_size": "scalar",
@@ -15,6 +23,8 @@
     "statistics": "scalar"
    },
    "max_request_body_size": "scalar",
+   "path": "scalar",
+   "protocol": "scalar",
    "proxy": {
     "auth": {
      "password": "scalar",
@@ -56,6 +66,11 @@
     "strip_path": "scalar",
     "tags": "scalar"
    },
+   "targets": {
+    "address": "scalar",
+    "failover": "scalar",
+    "weight": "scalar"
+   },
    "upstream": {
     "auth": {
      "access_key_id": "scalar",
@@ -80,10 +95,15 @@
  },
  "auth_strategies": {
   "config": "open",
+  "datastores": {
+   "name": "scalar",
+   "path": "scalar"
+  },
   "display_name": "scalar",
   "id": "scalar",
   "labels": "open",
   "name": "scalar",
+  "token_vault": "open",
   "type": "scalar"
  },
  "ca_certificates": {
@@ -142,10 +162,15 @@
  },
  "identity_providers": {
   "config": "open",
+  "datastores": {
+   "name": "scalar",
+   "path": "scalar"
+  },
   "display_name": "scalar",
   "id": "scalar",
   "labels": "open",
   "name": "scalar",
+  "token_vault": "open",
   "type": "scalar"
  },
  "mcp_servers": {
@@ -154,12 +179,16 @@
    "acl_attribute_type": "scalar",
    "acls": {
     "allow": "scalar",
-    "deny": "scalar"
+    "allow_when": "scalar",
+    "deny": "scalar",
+    "deny_when": "scalar"
    },
    "auth_strategies": "scalar",
    "default_tool_acls": {
     "allow": "scalar",
-    "deny": "scalar"
+    "allow_when": "scalar",
+    "deny": "scalar",
+    "deny_when": "scalar"
    },
    "metadata": {
     "authorization_servers": "scalar",
@@ -170,6 +199,12 @@
    }
   },
   "config": {
+   "balancer": {
+    "algorithm": "scalar",
+    "hash_on_header": "scalar"
+   },
+   "ca_certificates": "scalar",
+   "certificates": "scalar",
    "logging": {
     "audits": "scalar",
     "max_payload_size": "scalar",
@@ -177,6 +212,8 @@
     "statistics": "scalar"
    },
    "max_request_body_size": "scalar",
+   "path": "scalar",
+   "protocol": "scalar",
    "proxy": {
     "auth": {
      "password": "scalar",
@@ -220,6 +257,11 @@
    },
    "server": "open",
    "sources": "scalar",
+   "targets": {
+    "address": "scalar",
+    "failover": "scalar",
+    "weight": "scalar"
+   },
    "tools_cache_ttl_seconds": "scalar",
    "upstream": {
     "auth": {
@@ -234,73 +276,49 @@
     }
    }
   },
+  "datastores": {
+   "name": "scalar",
+   "path": "scalar"
+  },
   "display_name": "scalar",
   "enabled": "scalar",
   "id": "scalar",
   "labels": "open",
   "name": "scalar",
   "policies": "scalar",
-  "token_vault": {
-   "directory": "scalar",
-   "encryption_secrets": "scalar",
-   "provider": "scalar",
-   "redis": {
-    "cloud_authentication": {
-     "access_key_id": "scalar",
-     "assume_role_arn": "scalar",
-     "cache_name": "scalar",
-     "client_id": "scalar",
-     "client_secret": "scalar",
-     "is_serverless": "scalar",
-     "region": "scalar",
-     "role_session_name": "scalar",
-     "secret_access_key": "scalar",
-     "service_account_json": "scalar",
-     "tenant_id": "scalar",
-     "type": "scalar"
-    },
-    "cluster": {
-     "max_redirections": "scalar",
-     "nodes": {
-      "host": "scalar",
-      "ip": "scalar",
-      "port": "scalar"
-     }
-    },
-    "connect_timeout": "scalar",
-    "connection_is_proxied": "scalar",
-    "database": "scalar",
-    "host": "scalar",
-    "keepalive": {
-     "backlog": "scalar",
-     "pool_size": "scalar"
-    },
-    "password": "scalar",
-    "port": "scalar",
-    "read_timeout": "scalar",
-    "send_timeout": "scalar",
-    "sentinel": {
-     "master": "scalar",
-     "nodes": {
-      "host": "scalar",
-      "ip": "scalar",
-      "port": "scalar"
-     },
-     "password": "scalar",
-     "role": "scalar",
-     "username": "scalar"
-    },
-    "server_name": "scalar",
-    "ssl": "scalar",
-    "ssl_verify": "scalar",
-    "username": "scalar"
+  "rate_limiting": {
+   "limits": {
+    "limit": "scalar",
+    "method": "scalar",
+    "tool": "scalar",
+    "window_size": "scalar"
    }
+  },
+  "token_vault": {
+   "cache": "open",
+   "credential": {
+    "inbound": {
+     "location": "scalar",
+     "name": "scalar",
+     "prefix": "scalar"
+    },
+    "outbound": {
+     "location": "scalar",
+     "name": "scalar",
+     "prefix": "scalar"
+    }
+   },
+   "directory": "scalar",
+   "provider": "scalar",
+   "subject_token_type": "scalar"
   },
   "tools": {
    "access": {
     "acls": {
      "allow": "scalar",
-     "deny": "scalar"
+     "allow_when": "scalar",
+     "deny": "scalar",
+     "deny_when": "scalar"
     }
    },
    "annotations": "open",
@@ -370,16 +388,40 @@
    "project_id": "scalar",
    "service": "scalar"
   },
+  "datastores": {
+   "name": "scalar",
+   "path": "scalar"
+  },
   "display_name": "scalar",
   "labels": "open",
   "name": "scalar",
+  "token_vault": {
+   "cache": "open",
+   "credential": {
+    "inbound": {
+     "location": "scalar",
+     "name": "scalar",
+     "prefix": "scalar"
+    },
+    "outbound": {
+     "location": "scalar",
+     "name": "scalar",
+     "prefix": "scalar"
+    }
+   },
+   "directory": "scalar",
+   "provider": "scalar",
+   "subject_token_type": "scalar"
+  },
   "type": "scalar"
  },
  "models": {
   "access": {
    "acls": {
     "allow": "scalar",
-    "deny": "scalar"
+    "allow_when": "scalar",
+    "deny": "scalar",
+    "deny_when": "scalar"
    },
    "auth_strategies": "scalar"
   },
@@ -455,7 +497,8 @@
   },
   "datastores": {
    "name": "scalar",
-   "path": "scalar"
+   "path": "scalar",
+   "purpose": "scalar"
   },
   "display_name": "scalar",
   "enabled": "scalar",
@@ -469,7 +512,7 @@
   "targets": {
    "allow_auth_override": "scalar",
    "config": {
-    "": "open"
+    "": "scalar"
    },
    "name": "scalar",
    "provider": "scalar",
@@ -487,6 +530,7 @@
   },
   "display_name": "scalar",
   "enabled": "scalar",
+  "expressions": "open",
   "global": "scalar",
   "id": "scalar",
   "labels": "open",

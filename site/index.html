@@ -206,7 +206,7 @@ footer{color:var(--muted);font-size:12px}
 <div class="wrap">
   <header class="top">
     <div>
-      <span class="eyebrow">Kong Gateway 3.16 · AI Gateway 2.3 · Kong Identity</span>
+      <span class="eyebrow">Kong Gateway 3.16 · AI Gateway 2.4 · Kong Identity</span>
       <h1>Identity Workflow Builder</h1>
       <p class="lede">Answer a few questions about who calls your gateway. The builder works out where identities and groups live, which Consumer Groups you really need, and generates the sequence, the config and the analytics plan.</p>
     </div>
@@ -226,7 +226,7 @@ footer{color:var(--muted);font-size:12px}
 
   <section class="res" id="result" hidden></section>
 
-  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 / 2.3 and the Konnect Terraform provider. Paths marked "Tested end to end" had these exact files applied to a running gateway and checked; the others are generated drafts. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a>. Community project, not an official Kong product.</footer>
+  <footer>Generated configuration follows Kong Gateway 3.16, AI Gateway 2.2 to 2.4 and the Konnect Terraform provider. Paths marked "Tested end to end" had these exact files applied to a running gateway and checked; the others are generated drafts. · <span id="appver"></span> · <a href="https://github.com/bcollard/kong-identity-workflow-builder">source</a> · Built by <a href="https://github.com/bcollard">Baptiste Collard</a>. Community project, not an official Kong product.</footer>
   <div class="consent" id="consent" role="region" aria-label="Analytics consent" hidden>
     <span>This site uses Google Analytics cookies to count visits and popular scenarios. Nothing is sent about your answers beyond the page address.</span>
     <div><button class="btn" id="c-decline">Decline</button><button class="btn primary" id="c-accept">Accept</button></div>
@@ -260,8 +260,12 @@ const isAI = s=>s.product==="ai";            // AI Gateway 2.x entity model
 const isAI1 = s=>s.product==="ai1";          // AI Gateway 1.x: Kong Gateway + AI plugins
 const isAIany = s=>isAI(s)||isAI1(s);
 const gw316 = s=>s.version!=="3.15";
-const aigw23 = s=>isAI(s)&&s.version==="2.3";   // AI Gateway 2.3 runtime (2.2 otherwise)
+const aigwMinor = s=>isAI(s)?Number(String(s.version||"2.2").split(".")[1]):0;   // AI Gateway 2.x runtime minor (2.2 when unset)
+const aigwAtLeast = (s,minor)=>aigwMinor(s)>=minor;
+const aigw24 = s=>aigwAtLeast(s,4);
 const vaultOn = s=>/^vault-/.test(s.upstream||"");
+/** key-auth reads "Authorization: Bearer <key>" (header_auth_schemes, AI Gateway 2.4). Konnect key-auth strategies don't accept the field yet. */
+const bearerKeys = s=>aigw24(s)&&s.deploy==="self"&&s.caller==="employees"&&s.target==="models";
 /** Token Vault provider templates (Kong Identity). auth: client = OAuth app you own, dcr = registered on first use, static = shared secret. */
 const VAULT = {
   "github":{label:"GitHub",tpl:"github",auth:"client",slug:"github"},
@@ -279,13 +283,14 @@ const hitIdentifier = s=>s.record==="consumers"?"consumer":(s.record==="principa
 const STEPS = [
  {id:"product",title:"Product",ask:"Which gateway receives the calls?",options:s=>[
    {v:"api",label:"API Gateway",s:"REST/gRPC APIs on Kong Gateway 3.16",ex:"services · routes · plugins"},
-   {v:"ai",label:"AI Gateway 2.x",s:"LLMs, A2A agents and MCP servers with the AI Gateway entity model (2.2, 2.3)",ex:"models · agents · auth strategies · policies"},
+   {v:"ai",label:"AI Gateway 2.x",s:"LLMs, A2A agents and MCP servers with the AI Gateway entity model (2.2 to 2.4)",ex:"models · agents · auth strategies · policies"},
    {v:"ai1",label:"AI Gateway 1.x",s:"Kong Gateway 3.15 / 3.16 with AI plugins on services and routes",ex:"ai-proxy-advanced · ai-a2a-proxy · ai-mcp-proxy"}]},
  {id:"deploy",title:"Control plane",ask:"Where is the control plane?",help:s=>"<b>Kong Identity principals</b> are stored in a Konnect directory and looked up by Konnect-connected data planes only. A self-managed control plane can still validate Kong Identity tokens as a plain OIDC issuer.",options:s=>[
    {v:"konnect",label:"Konnect",s:"Hybrid or dedicated cloud data planes",tag:"rec",tagText:"Recommended"},
    {v:"self",label:"Self-managed",s:isAI(s)?"AI Gateway entities applied with deck ai sync or the AI Manager UI":"Kong Gateway with its own control plane (decK, Admin API, KIC)"}]},
- {id:"version",title:"Gateway version",ask:"Which version runs the data planes?",help:s=>isAI(s)?"2.3 adds <b>Token Vault</b> upstream credentials and CEL <b>allow_when</b> ACLs on MCP servers. Token Vault is Konnect only.":"3.16 adds ACL <b>allow_when</b>, plugin <b>expressions</b> (limits read from principal metadata), <b>principal</b> rate-limit identifiers and OpenTelemetry principal attributes. Principals themselves need 3.15.",options:s=>isAI(s)?[
-   {v:"2.3",label:"AI Gateway 2.3",s:"Token Vault for MCP upstreams, allow_when on MCP servers",tag:"rec",tagText:"Recommended"},
+ {id:"version",title:"Gateway version",ask:"Which version runs the data planes?",help:s=>isAI(s)?"2.4 lets model and agent ACLs read token claims (<b>access_token.claims</b> in CEL), reads API keys sent as <b>Authorization: Bearer</b> (self-managed only for now) and answers 401 for a missing token on group ACLs. 2.3 adds <b>Token Vault</b> upstream credentials and CEL <b>allow_when</b> ACLs on MCP servers. Token Vault is Konnect only.":"3.16 adds ACL <b>allow_when</b>, plugin <b>expressions</b> (limits read from principal metadata), <b>principal</b> rate-limit identifiers and OpenTelemetry principal attributes. Principals themselves need 3.15.",options:s=>isAI(s)?[
+   {v:"2.4",label:"AI Gateway 2.4",s:"Group-claim ACLs on models and agents, Bearer API keys, 401 for a missing token on group ACLs",tag:"rec",tagText:"Recommended"},
+   {v:"2.3",label:"AI Gateway 2.3",s:"Token Vault for MCP upstreams, allow_when on MCP servers"},
    {v:"2.2",label:"AI Gateway 2.2",s:"Auth strategies, principals, CEL ACLs on models and agents"}]:[
    {v:"3.16",label:"Kong Gateway 3.16",s:"Principals with metadata-driven ACLs and limits",tag:"rec",tagText:"Recommended"},
    {v:"3.15",label:"Kong Gateway 3.15",s:"Principals for authentication and attribution; groups still carry ACLs and limits"}]},
@@ -335,12 +340,15 @@ const STEPS = [
    {v:"none",label:"Any authenticated caller",s:"No per-resource subscription.",tag:"nocg",tagText:"No CG"},
    {v:"subcg",label:"Subscription groups + ACL",s:`One sub-CG per ${(ai||ai1)?(s.target==="models"?"model":s.target==="a2a"?"agent":"MCP server"):"API"}. Membership from ${subSrc}.`,tag:"cg",tagText:"sub-CG"},
    {v:"meta",label:"Principal metadata + ACL allow_when",s:"<code>allow_when: '\"orders-api\" in principal.metadata.subscriptions'</code>",tag:"nocg",tagText:"No CG",
-     disabled:!pr?"Needs Kong Identity principals.":ai?(s.target==="mcp"&&!aigw23(s)?"MCP server ACLs accept allow_when from AI Gateway 2.3.":null):!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
-   {v:"claimacl",label:"Groups claim + ACL",s:(ai||ai1)&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
-     disabled:!cl?"Needs token claims as the identity record.":(ai&&s.target!=="mcp")?"AI Gateway auth strategies don't document authenticated_groups_claim (it is only passed through to the plugin, untested). Use subscription groups.":null}];
+     disabled:!pr?"Needs Kong Identity principals.":ai?(s.target==="mcp"&&!aigwAtLeast(s,3)?"MCP server ACLs accept allow_when from AI Gateway 2.3.":null):!gw316(s)?"ACL allow_when needs Kong Gateway 3.16.":null},
+   {v:"claimacl",label:"Groups claim + ACL",s:(ai||ai1)&&s.target==="mcp"?"MCP tool ACLs read a token claim directly (acl_attribute_type: oauth_access_token).":ai?`${s.target==="models"?"Model":"Agent"} access.acls.allow_when reads the ${IDP[s.idp]?.groups||"groups"} claim (access_token.claims), no Consumer Groups.`:"ACL matches group names from the token (authenticated_groups_claim), no Consumer Groups.",tag:"nocg",tagText:"No CG",
+     disabled:!cl?"Needs token claims as the identity record."
+       :(ai&&s.target==="mcp"&&!aigwAtLeast(s,3))?"MCP tool ACLs on a token claim need AI Gateway 2.3: openid-connect hands the claims to ai-mcp-proxy from 2.3. On 2.2 they match nothing and deny every call."
+       :(ai1&&s.target==="mcp"&&!gw316(s))?"MCP tool ACLs on a token claim need Kong Gateway 3.16: openid-connect hands the claims to ai-mcp-proxy from 3.16. On 3.15 they match nothing and deny every call."
+       :(ai&&s.target!=="mcp"&&!aigw24(s))?"Model and agent ACLs read token claims from AI Gateway 2.4 (access_token.claims in allow_when). On 2.2 and 2.3, use subscription groups.":null}];
  }},
  {id:"upstream",title:"Upstream auth",ask:"How does the gateway authenticate to the MCP server's upstream?",visible:s=>isAI(s)&&s.target==="mcp",help:s=>"<b>Token Vault</b> (Kong Identity) stores upstream credentials for GitHub, Slack and other services. The AI Gateway exchanges the caller's token with Token Vault (RFC 8693) for the matching credential and injects it: the caller and its agent never hold it. The upstream service only sees standard OAuth (consent once, then refresh), so it needs no token exchange support.",options:s=>{
-   const why=!aigw23(s)?"Token Vault needs AI Gateway 2.3.":s.deploy!=="konnect"?"Token Vault is Konnect only.":(s.cred==="apikey"&&s.record!=="principals")?"Token Vault exchanges an IdP token or a Kong Identity API key. Consumer keys can't be exchanged: pick principals.":null;
+   const why=!aigwAtLeast(s,3)?"Token Vault needs AI Gateway 2.3 or later.":s.deploy!=="konnect"?"Token Vault is Konnect only.":(s.cred==="apikey"&&s.record!=="principals")?"Token Vault exchanges an IdP token or a Kong Identity API key. Consumer keys can't be exchanged: pick principals.":null;
    return [
    {v:"none",label:"No upstream credential",s:"The gateway forwards the call as is. The MCP server is open to the gateway or handles its own auth."},
    {v:"vault-user",label:"Token Vault · each caller's own account",s:"Per-user OAuth: each caller enrolls once on the service's consent screen, then the gateway uses their own token. The service sees who is calling.",tag:"rec",tagText:"Recommended",disabled:why,
@@ -505,14 +513,17 @@ function derive(s){
   if(ai && oidcLike(s)) warns.push("One openid-connect auth strategy per model, agent or MCP server. Several issuers: list them on that strategy (issuers_allowed + extra_jwks_uris) and map callers on a claim unique across issuers, or give the other issuer its own model.");
   if(!ai && gw316(s)) warns.push("Kong Gateway 3.16 routes default to protocols [https]: a plain-HTTP call gets 426 Upgrade Required. Serve the gateway over TLS, or set protocols: [http, https] on the routes that must accept HTTP.");
   if(isAIany(s) && s.caller==="employees" && s.target==="models"){
-    if(s.cred==="apikey") notes.push("Coding agents send the key in their own header. Claude Code uses x-api-key (ANTHROPIC_API_KEY), so key_names lists it. key-auth reads the header value as is, so tools that send Authorization: Bearer <key> (Codex, GitHub Copilot, Cursor) don't match: give them OIDC tokens, or a custom header if the tool has that setting.");
+    if(s.cred==="apikey"&&bearerKeys(s)) notes.push("Coding agents send the key in their own header. Claude Code uses x-api-key (ANTHROPIC_API_KEY); Codex, GitHub Copilot and Cursor send Authorization: Bearer <key>. key_names lists both headers, and header_auth_schemes: [Bearer] (AI Gateway 2.4) strips the scheme. A value without the scheme, like x-api-key, is read as is.");
+    else if(s.cred==="apikey") notes.push(`Coding agents send the key in their own header. Claude Code uses x-api-key (ANTHROPIC_API_KEY), so key_names lists it. key-auth reads the header value as is, so tools that send Authorization: Bearer <key> (Codex, GitHub Copilot, Cursor) don't match: give them OIDC tokens, or a custom header if the tool has that setting.${aigw24(s)?" AI Gateway 2.4 key-auth can strip the Bearer scheme (header_auth_schemes), but Konnect key-auth strategies don't accept that field yet; a self-managed gateway (deck ai sync) does.":""}`);
     else notes.push("Claude Code: an apiKeyHelper script can print a short-lived token from your IdP, sent as Authorization: Bearer. Set CLAUDE_CODE_API_KEY_HELPER_TTL_MS below the token lifetime, and clear ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN: when set, Claude Code doesn't call the helper.");
   }
   if(plans.some(p=>!["none","pkg"].includes(p))) notes.push(`Rate-limit counters use strategy: local, so each data plane node counts on its own: with N nodes a caller can reach N × the limit. With several nodes, set strategy: redis and a shared Redis${s.deploy==="konnect"?" (cluster doesn't work on Konnect data planes, which run in hybrid mode)":" (cluster needs a traditional, database-backed deployment)"}.`);
   if(ai && (plans.includes("llm")||(s.analytics||[]).includes("cost"))) notes.push("Costs and cost budgets use the prices on each model target (input_cost, output_cost, plus cache_read_cost and cache_write_cost if the provider discounts cached tokens), in USD per million tokens. A target without prices counts as free.");
   if(vault){
     notes.push(`Token Vault releases the ${vault.label} credential to the AI Gateway only (mTLS); the caller and its agent never see it.`);
-    if(vault.mode==="user") notes.push("A caller who hasn't enrolled sees virtual authenticate and check_authentication_status tools with an enrollment URL (valid 10 minutes). The real tools appear after enrollment.");
+    if(vault.mode==="user") notes.push(aigw24(s)
+      ? "A caller who hasn't enrolled gets an enrollment URL (valid 10 minutes): as an MCP URL elicitation when the client supports it (AI Gateway 2.4), otherwise in the text of the virtual authenticate and check_authentication_status tools. The real tools appear after enrollment."
+      : "A caller who hasn't enrolled sees virtual authenticate and check_authentication_status tools with an enrollment URL (valid 10 minutes). The real tools appear after enrollment.");
     if(vault.auth!=="static") notes.push(`The RFC 8693 exchange runs between the AI Gateway and Token Vault only. ${vault.label} never receives your IdP token: ${vault.mode==="user"?"each caller":"an admin"} authorizes ${vault.auth==="dcr"?"the client Token Vault registered (DCR)":"your OAuth app"} once on ${vault.label}'s consent screen, Token Vault exchanges the authorization code itself, then refreshes the token before it expires (provider refresh_buffer_seconds).`);
     if(vault.subject==="access_token") warns.push(`Token Vault only accepts tokens from a trusted IdP on the directory with vault_access_enabled: true. Its issuer_url must match the token's iss exactly (${d0issuer(s)}).`);
     warns.push("Keep the vault private key on the data planes only (vault reference in the token-vault datastore). Konnect keeps the public key and can't decrypt stored credentials. Generated config never contains the key.");
@@ -520,8 +531,13 @@ function derive(s){
     if(vault.mode==="user" && s.cred==="apikey") warns.push("Enrollment protection needs an openid-connect auth strategy: with API keys, anyone holding an enrollment link can complete it.");
   }
   if(ai && s.target==="mcp" && s.access==="meta") notes.push("On a passthrough-listener MCP server, a server-level allow_when gates the tools, not the MCP connection itself.");
+  if(ai && s.access==="claimacl" && s.target!=="mcp"){
+    notes.push(`${tgt.kind==="model"?"Model":"Agent"} access.acls.allow_when on access_token.claims needs AI Gateway runtime 2.4${s.deploy==="konnect"?" (min_runtime_version: \"2.4\")":""}. Group membership stays in ${idp?idp.label:"the IdP"}: add callers to the ${tgt.name}-users group there.`);
+    if(s.idp==="adfs") warns.push("AD FS sends a single group as a string, not a list: the allow_when \"in\" test then fails and the caller gets 403. Send groups as a list, or test the string with ==.");
+  }
   if(ai && s.access==="meta") notes.push(`${tgt.kind==="model"?"Model":tgt.kind==="agent"?"Agent":"MCP server"} access.acls.allow_when needs kongctl 1.23+ (AI Gateway runtime ${s.target==="mcp"?"2.3":"2.2"}+). One rule type per ACL: allow_when replaces allow.`);
-  if(ai) warns.push(s.access==="subcg"||s.access==="meta"
+  if(ai && aigw24(s) && s.access==="subcg") warns.push("AI Gateway 2.4 answers 401 for a missing or unknown token: an anonymous caller has no groups, and the 2.4 ACL answers 401 for it (2.3 and earlier answered 403).");
+  else if(ai) warns.push(s.access==="subcg"||s.access==="meta"||(s.access==="claimacl"&&s.target!=="mcp")
     ? "AI Gateway answers 403 (not 401) for a missing or unknown token: the anonymous fallback hits the ACL first."
     : "AI Gateway answers 401 for a missing or unknown token: the anonymous fallback ends in a request-termination (no ACL to answer 403).");
   if(ai&&co&&oidcLike(s)) notes.push("A valid token whose claim matches no AI Consumer is rejected like a missing token (consumer_optional: false): add the AI Consumer before the caller's first request.");
@@ -532,6 +548,7 @@ function derive(s){
   if(ai1 && s.target==="a2a") notes.push("ai-a2a-proxy needs Kong Gateway 3.14+ and is generally available.");
   if(s.idp==="entra" && cl) warns.push("Entra ID groups are object IDs. Use app roles (roles claim) and name the groups after the roles.");
   if(pr) warns.push("Principals are cached on the data plane (10 min by default): metadata changes are not instant.");
+  if(pr && aigw24(s)) notes.push("AI Gateway 2.4 refreshes a cached principal in the background during the last quarter of its TTL and keeps serving it while Kong Identity is briefly unreachable. Self-managed nodes can also share the cache through Redis (principals_cache on key-auth and openid-connect); Konnect auth strategies don't expose it yet.");
   if(pr && groups.length && s.access!=="meta") warns.push("Two teams write the same metadata key (consumer_groups). Run membership changes through one provisioning pipeline.");
   if(s.cred==="apikey" && s.caller==="employees") warns.push("Personal API keys don't follow joiners/leavers. Rotate them and set expires_at.");
   if(co) notes.push("Consumers are created per control plane. With several control planes, every Consumer and its credentials is duplicated.");
@@ -545,7 +562,9 @@ function derive(s){
   if(A.includes("agentan")) an.push({tool:"Agent analytics",where:"Konnect Analytics · ai-a2a-proxy log_statistics (on by default)",dims:"method, task, context, error, principal"});
   if(A.includes("prom")) an.push({tool:"Prometheus + Grafana",where:ai?"prometheus policy (AI metrics) + http-log → Vector → Prometheus for identity labels":ai1?"prometheus plugin (ai_metrics: true) + http-log → Vector for identity labels":"prometheus plugin + http-log (custom_fields_by_lua) → Vector log_to_metric",dims:aiAny?"model, provider, tokens; caller and BU via the log pipeline":"service, route, status; caller and BU via the log pipeline"});
   if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin/policy → collector",dims:!ai&&pr&&gw316(s)?`kong.auth.principal.display_name on request counts${ai1?", gen_ai.* metrics":""}`:aiAny?"gen_ai.* metrics, traces":"traces, request metrics"});
-  if(buDim && pr && !groups.some(g=>g.kind==="bu"||g.name.startsWith("bu-"))) notes.push("Principal metadata isn't an analytics dimension: keep a BU group or a log label to report by BU.");
+  if(buDim && pr && !groups.some(g=>g.kind==="bu"||g.name.startsWith("bu-"))) notes.push(aigw24(s)
+    ? "AI Gateway 2.4 sends principal.metadata (bu included) with each analytics record, but Konnect Explorer can't group by it yet: keep a BU group or a log label to report by BU."
+    : "Principal metadata isn't an analytics dimension: keep a BU group or a log label to report by BU.");
   return {ai,ai1,aiAny,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans,vault};
 }
 
@@ -649,7 +668,7 @@ function buildSeq(s,d){
   if(d.groups.length) steps.push({f:"auth",t:"auth",l:`${d.groups.length} group(s) on the request`,h:"Groups attached",p:d.pr?"From metadata consumer_groups (names or UUIDs).":d.cl?"From the groups claim, matched by name to existing groups.":"From Consumer membership.",set:{groups:d.groups.map(g=>`${g.name}  (${g.kind} · ${g.owner})`).join("\n")}});
   let prev="auth";
   if(lanes.find(l=>l.id==="acl")){
-    const why = s.access==="meta"?`allow_when: "${d.tgt.name}" in principal.metadata.subscriptions`:s.access==="claimacl"?"allow: group from the token":`allow [${d.tgt.sub}]`;
+    const why = s.access==="meta"?`allow_when: "${d.tgt.name}" in principal.metadata.subscriptions`:s.access==="claimacl"?(d.ai&&aigw24(s)?`allow_when: "${d.tgt.name}-users" in access_token.claims.${d.idp.groups}`:"allow: group from the token"):`allow [${d.tgt.sub}]`;
     steps.push({f:prev,t:"acl",l:`${why} ✓`,h:"Subscription check",p:"A caller without the subscription gets a 403 here.",set:{decision:"acl: allowed"}}); prev="acl";
   }
   for(const r of rl){
@@ -808,7 +827,7 @@ ${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.le
     display_name: ${WHO[s.caller].label} API keys
     type: key-auth
     config:
-      key_names: [${s.caller==="employees"&&s.target==="models"?"apikey, x-api-key":"apikey"}]${s.caller==="employees"&&s.target==="models"?"   # x-api-key: Claude Code sends ANTHROPIC_API_KEY there":""}${d.pr?"\n      principals: { enabled: true, directory: default, error_on_miss: true }":s.target==="mcp"?"":"\n      hide_credentials: true"}`;  // ai-mcp-proxy needs the credential: the converter overrides hide_credentials to false
+      key_names: [${bearerKeys(s)?"apikey, x-api-key, authorization":s.caller==="employees"&&s.target==="models"?"apikey, x-api-key":"apikey"}]${bearerKeys(s)?"   # x-api-key: Claude Code · authorization: Codex, Copilot, Cursor\n      header_auth_schemes: [Bearer]   # AI Gateway 2.4: strips \"Bearer \" from the value":s.caller==="employees"&&s.target==="models"?"   # x-api-key: Claude Code sends ANTHROPIC_API_KEY there":""}${d.pr?"\n      principals: { enabled: true, directory: default, error_on_miss: true }":s.target==="mcp"?"":"\n      hide_credentials: true"}`;  // ai-mcp-proxy needs the credential: the converter overrides hide_credentials to false
     // AI Consumers can't list groups: membership is declared on the group (consumers: [refs])
     const cgs = d.groups.map(g=>`  - { ref: ${g.name}, name: ${g.name}, display_name: "${g.kind} · ${g.owner}"${d.co?`, consumers: [${d.who.name}]`:""} }`).join("\n");
     const cons = d.co?`    consumers:
@@ -824,8 +843,7 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
     type: ai-rate-limiting-advanced
     global: true
     config:
-      identifier: credential
-      strategy: local                # one count per data plane node: use redis with several nodes
+${aigw24(s)?"":"      identifier: credential\n"}      strategy: local                # one count per data plane node: use redis with several nodes
       policies:
         - match: [{ type: consumer_group, key: name, values: [ai-tier-standard] },
                   { type: credential, partition_by: true }]
@@ -849,7 +867,8 @@ ${d.auth.plugin==="key-auth"?"":`        custom_id: "<${d.credClaim||"sub"} valu
     config: { identifier: ${hitIdentifier(s)}, limit: [100], window_size: [60], window_type: fixed, strategy: local, namespace: mcp-${d.tgt.name} }   # local: per node`);
     if((s.analytics||[]).includes("prom")) pol.push(`  - ref: metrics\n    name: metrics\n    display_name: Metrics\n    type: prometheus\n    global: true\n    config: { ai_metrics: true, status_code_metrics: true }`);
     const allow = s.access==="subcg"?`, acls: { allow: [${d.tgt.sub}] }`
-      :s.access==="meta"?`, acls: { allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions'] }`:"";
+      :s.access==="meta"?`, acls: { allow_when: ['principal.metadata.subscriptions != null && "${d.tgt.name}" in principal.metadata.subscriptions'] }`
+      :s.access==="claimacl"&&s.target!=="mcp"&&aigw24(s)?`, acls: { allow_when: ['has(access_token.claims.${d.idp.groups}) && "${d.tgt.name}-users" in access_token.claims.${d.idp.groups}'] }`:"";
     const stratName = d.auth.plugin==="openid-connect"?`${s.caller}-auth`:`${s.caller}-keys`;
     const mcpSlug = d.tgt.name.replace(/-tools$/,"");
     let ent;
@@ -915,7 +934,7 @@ ai_gateways:
   - ref: aigw
     name: acme-aigw
     display_name: ACME AI Gateway
-${aigw23(s)?`    min_runtime_version: "2.3"\n`:""}${d.vault?`    datastores:
+${aigwAtLeast(s,3)?`    min_runtime_version: "${s.version}"\n`:""}${d.vault?`    datastores:
       - ref: token-vault
         name: token-vault
         display_name: Token Vault
@@ -979,18 +998,18 @@ ${glob.length?`plugins:\n${glob.join("\n")}\n`:""}`};
 
 /* Each Konnect API block says whether Terraform can do the same, or only the API (or only the console) can. */
 const API_TAGS=[
-  [/^# Kong Identity auth server, scope and client/, "tf:konnect_identity_auth_server, konnect_identity_auth_server_scope, konnect_identity_auth_server_client"],
-  [/^# (Claim templated|Groups claim templated)/, "tf:konnect_identity_auth_server_claim"],
-  [/^# Directory/, "tf:konnect_identity_directory"],
-  [/^# Token Vault: enable/, "tf:konnect_identity_directory (vault_enabled)"],
-  [/^# Vault key/, "tf:konnect_identity_vault_key"],
-  [/^# Trusted IdP/, "tf:konnect_identity_trusted_idp"],
-  [/^# Token Vault provider/, "tf:konnect_identity_vault_provider"],
-  [/^# Shared credential: store/, "tf:konnect_identity_vault_provider_credential"],
+  [/^# Kong Identity auth server, scope and client/, "tf:konnect_identity_auth_server, konnect_identity_auth_server_scope, konnect_identity_auth_server_client", "identity.auth_servers (scopes, clients)"],
+  [/^# (Claim templated|Groups claim templated)/, "tf:konnect_identity_auth_server_claim", "identity.auth_servers[].claims"],
+  [/^# Directory/, "tf:konnect_identity_directory", "identity.directories"],
+  [/^# Token Vault: enable/, "tf:konnect_identity_directory (vault_enabled)", "identity.directories[].vault.enabled"],
+  [/^# Vault key/, "tf:konnect_identity_vault_key", "identity.directories[].vault.keys"],
+  [/^# Trusted IdP/, "tf:konnect_identity_trusted_idp", "identity.directories[].trusted_idps"],
+  [/^# Token Vault provider/, "tf:konnect_identity_vault_provider", "identity.directories[].vault.providers"],
+  [/^# Shared credential: store/, "tf:konnect_identity_vault_provider_credential", "vault.providers[].shared_credentials"],
   [/^# Shared credential: admin enrollment/, "api"],
-  [/^# Principal/, "tf:konnect_identity_principal"],
-  [/^# API key, generated/, "tf:konnect_identity_principal_api_key (type imported: Terraform can't read back a generated key)"],
-  [/^# Link the/, "tf:konnect_identity_principal_identity"],
+  [/^# Principal/, "tf:konnect_identity_principal", "identity.directories[].principals"],
+  [/^# API key, generated/, "tf:konnect_identity_principal_api_key (type imported: Terraform can't read back a generated key)", "principals[].api_keys (apply --secret-output-dir captures the key)"],
+  [/^# Link the/, "tf:konnect_identity_principal_identity", "principals[].identities"],
   [/^# consumer_groups metadata takes/, "read"],
   [/^# Register the calling agent in Konnect Catalog/, "api"],
   [/^# Kong Identity as DCR provider/, "tf:konnect_dcr_provider"],
@@ -1005,7 +1024,7 @@ function tagApiBlock(b){
   const m=API_TAGS.find(([re])=>re.test(b)); if(!m) return b;
   const line=m[1]==="api"?"# ↳ API only: no decK, kongctl or Terraform resource":m[1]==="read"?"# ↳ lookup: read-only"
     :m[1]==="console"?"# ↳ console only: no API or Terraform resource yet"
-    :`# ↳ or Terraform: ${m[1].slice(3)}`;
+    :`# ↳ or Terraform: ${m[1].slice(3)}${m[2]?`\n# ↳ or kongctl 1.27+: ${m[2]}`:""}`;
   const nl=b.indexOf("\n"); return nl<0?`${b}\n${line}`:`${b.slice(0,nl)}\n${line}${b.slice(nl)}`;
 }
 function genApiPortal(s,d){
@@ -1366,7 +1385,7 @@ ${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
     t.push(`resource "konnect_ai_gateway" "acme" {
   name            = "acme-aigw"
   display_name    = "ACME AI Gateway"
-  deployment_type = "hybrid"${aigw23(s)?`\n  min_runtime_version = "2.3"`:""}
+  deployment_type = "hybrid"${aigwAtLeast(s,3)?`\n  min_runtime_version = "${s.version}"`:""}
 }`);
     if(d.vault) t.push(`resource "konnect_ai_gateway_datastore" "token_vault" {
   gateway_id = konnect_ai_gateway.acme.id
@@ -1577,7 +1596,7 @@ const ID_FORMAT = "1";     // format 1: one char per single-choice step, two cha
 const ID_STEPS = ["product","deploy","version","caller","target","cred","idp","record","access","plans","analytics","upstream","provider"];
 const ID_BASE_STEPS = 11;   // steps of the first layout: later steps are omitted from the payload while they're unanswered
 const CODES = {
-  product:["api","ai","ai1"], deploy:["konnect","self"], version:["3.16","3.15","2.3","2.2"],
+  product:["api","ai","ai1"], deploy:["konnect","self"], version:["3.16","3.15","2.3","2.2","2.4"],
   caller:["employees","apps","agents","portal"], target:["models","a2a","mcp"], cred:["oidc","cc","apikey"],
   idp:["okta","entra","keycloak","adfs","ki"], record:["claims","principals","consumers","portalapp"],
   access:["none","subcg","meta","claimacl","portal"],
@@ -1766,7 +1785,7 @@ function render(){
 }
 function notice(msg,info){const n=document.getElementById("notice");n.hidden=!msg;n.textContent=msg||"";n.className="notice"+(info?" info":"")}
 document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
-document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",version:"2.3",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
+document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",version:"2.4",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
 (function consent(){ // Google Consent Mode: denied by default (see <head>), updated on the visitor's choice
   let choice=null; try{choice=localStorage.getItem("iwb-consent")}catch(e){}

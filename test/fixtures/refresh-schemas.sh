@@ -32,3 +32,4 @@ dump gw-3.16 kong/kong-gateway:3.16.0.0 $PLUGINS_GW
 dump gw-3.15 kong/kong-gateway:3.15.0.6 $PLUGINS_GW
 dump aigw-2.2 kong/kong-ai-gateway:2.2.0 $PLUGINS_AIGW
 dump aigw-2.3 kong/kong-ai-gateway:2.3.0 $PLUGINS_AIGW
+dump aigw-2.4 kong/kong-ai-gateway-dev:aigw-master $PLUGINS_AIGW   # 2.4.0 not on Docker Hub yet: aigw-master is 2.4.0

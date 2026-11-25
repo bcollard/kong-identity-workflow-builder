@@ -17,7 +17,19 @@ const noClasses = !CLASSES.length && "no self-managed AI Gateway 2.x paths in sc
 
 const failures = [];
 const fail = (s, msg) => failures.push(`${label(s)}: ${msg}`);
-const report = name => { const f = failures.splice(0); assert.equal(f.length, 0, `${name}\n${f.slice(0, 15).join("\n")}${f.length > 15 ? `\n… ${f.length - 15} more` : ""}`); };
+/** Converter warnings that don't apply to the generated config. Each one names why. */
+function knownFalsePositive(w, doc) {
+  // ai-deck-converter (mcpRouteIdentifiesCaller) only counts consumer_claims, consumer_by and authenticated_groups_claim
+  // on openid-connect. consumer_groups_claim also puts the caller's groups on the request, which the acl plugin matches
+  // (lab-verified on models, AI-1).
+  if (/sets access\.acls, but no plugin on its route identifies a consumer or consumer group/.test(w)) {
+    const oidc = (doc.services || []).flatMap(sv => (sv.routes || []).flatMap(rt => rt.plugins || [])).find(p => p.name === "openid-connect");
+    return !!(oidc && oidc.config && oidc.config.consumer_groups_claim);
+  }
+  return false;
+}
+const SHOW = Number(process.env.IWB_MAX_FAILURES) || 15;   // failures printed per test
+const report = name => { const f = failures.splice(0); assert.equal(f.length, 0, `${name}\n${f.slice(0, SHOW).join("\n")}${f.length > SHOW ? `\n… ${f.length - SHOW} more` : ""}`); };
 
 /** Keys the converter would silently drop (its YAML decoding ignores unknown fields). */
 function unknownKeys(v, def, p, out) {
@@ -43,22 +55,22 @@ test(`deck ai sync files use only fields the converter reads (${CLASSES.length} 
 
 test("deck ai sync files lower to valid Kong config that matches the blueprint", { skip: noClasses || (!hasGo && "needs Go to run ai-deck-converter (test/tools/aigw-convert)") }, () => {
   const rendered = CLASSES.map(s => ({ s, r: render(X, s) }));
-  const res = spawnSync("go", ["run", ".", "convert"], { cwd: TOOL, input: JSON.stringify(rendered.map(x => x.r.cfg.decl.text)), maxBuffer: 1 << 28, encoding: "utf8" });
+  const res = spawnSync("go", ["run", ".", "convert"], { cwd: TOOL, input: JSON.stringify(rendered.map(x => ({ yaml: x.r.cfg.decl.text, version: x.s.version }))), maxBuffer: 1 << 28, encoding: "utf8" });
   assert.equal(res.status, 0, res.stderr);
   const out = JSON.parse(res.stdout);
   rendered.forEach(({ s, r }, i) => {
     const { kong, warnings, error } = out[i];
     if (error) return fail(s, `conversion error: ${error}`);
-    for (const w of warnings || []) fail(s, `warning: ${w}`);
     const doc = yaml.load(kong);
-    // every lowered plugin is valid for AI Gateway 2.2
+    for (const w of warnings || []) if (!knownFalsePositive(w, doc)) fail(s, `warning: ${w}`);
+    // every lowered plugin is valid for the AI Gateway runtime the scenario picks
     const plugins = [...(doc.plugins || []), ...(doc.consumer_groups || []).flatMap(g => g.plugins || []),
       ...(doc.consumers || []).flatMap(c => c.plugins || []),
       ...(doc.services || []).flatMap(sv => [...(sv.plugins || []), ...(sv.routes || []).flatMap(rt => rt.plugins || [])])];
     if (!plugins.length) return fail(s, "lowered config has no plugins");
     for (const p of plugins) {
       const { route, service, consumer, consumer_group, model, tags, ...rest } = p; // FKs and tags written by the converter
-      for (const e of checkPlugin(rest, "aigw-2.2", "lowered")) fail(s, e);
+      for (const e of checkPlugin(rest, `aigw-${s.version}`, "lowered")) fail(s, e);
     }
     const names = new Set(plugins.map(p => p.name));
     // the route is protected by the chosen strategy, the target plugin exists
@@ -67,11 +79,10 @@ test("deck ai sync files lower to valid Kong config that matches the blueprint",
     if (!names.has(want)) fail(s, `no ${want} plugin after lowering`);
     if (s.plans.includes("llm") && !names.has("ai-rate-limiting-advanced")) fail(s, "token budget policy not lowered");
     if (s.analytics.includes("prom") && !names.has("prometheus")) fail(s, "prometheus policy not lowered");
-    // subscription ACLs land where the converter puts them: acl plugin (models, agents) or default_acl (MCP)
+    // subscription ACLs land on an acl plugin on the route (MCP servers too in converter v0.45.0; v0.19 used ai-mcp-proxy default_acl)
     if (s.access === "subcg") {
-      const allow = s.target === "mcp"
-        ? plugins.filter(p => p.name === "ai-mcp-proxy").flatMap(p => (p.config.default_acl || []).flatMap(a => a.allow || []))
-        : plugins.filter(p => p.name === "acl").flatMap(p => p.config.allow || []);
+      const allow = [...plugins.filter(p => p.name === "acl").flatMap(p => p.config.allow || []),
+        ...plugins.filter(p => p.name === "ai-mcp-proxy").flatMap(p => (p.config.default_acl || []).flatMap(a => a.allow || []))];
       if (!allow.includes(r.d.tgt.sub)) fail(s, `subscription group ${r.d.tgt.sub} not enforced after lowering [${allow}]`);
     }
     // groups and consumer membership survive

@@ -40,12 +40,25 @@ The version step offers 2.3 (since v1.8.0): MCP `allow_when` and Token Vault use
 - MCP hit limits with the native `rate_limiting` block (per tool or method) next to `rate-limiting-advanced`.
 - Policy `expressions`, `credential_claims`, `principals.jit`.
 
+## AI Gateway 2.4
+
+The version step offers 2.4 (since v1.10.0). Still to do:
+
+- Lab runs once a 2.4 image is published: groups-claim `allow_when` on models and agents (`access_token.claims`), 401 for a
+  missing token with a sub-CG ACL (403 with allow_when), Bearer API keys (`header_auth_schemes`) from Codex or Cursor, the LLM policy without `identifier`.
+- `header_auth_schemes` and `principals_cache` on Konnect auth strategies, once the Konnect schema lists them.
+- On-behalf-of with `openid-connect` `principals.actors` and CEL `actors` (agent acting for a user).
+- Konnect Explorer grouping by `principal.metadata` (2.4 sends it): BU reports without a BU group.
+- Agent and MCP server upstream `targets` + `balancer` (2.4 entity model).
+- Report the converter false positive (`mcpRouteIdentifiesCaller` ignores `consumer_groups_claim`) upstream.
+- kongctl 1.27+ `identity:` block in the kongctl tab for Konnect principals paths (today the Konnect API tab names the path).
+
 ## Wizard variables not covered yet
 
 | Variable | Why it matters |
 |---|---|
 | Several caller populations on one AI model | One `openid-connect` strategy per model: generate `issuers_allowed` + `extra_jwks_uris` on it, with a claim unique across issuers, or a second model per issuer |
-| Token exchange / on-behalf-of (RFC 8693, actor token) | Agents acting for a user; `openid-connect` token exchange and `ai-mcp-oauth2` token exchange |
+| Token exchange / on-behalf-of (RFC 8693, actor token) | Agents acting for a user; `openid-connect` token exchange and `ai-mcp-oauth2` token exchange; `principals.actors` and CEL `actors` on AI Gateway 2.4 |
 | MCP OAuth (`ai-mcp-oauth2`) | MCP clients discovering the auth server through protected-resource metadata (`openid-connect` `protected_resource_metadata`, 3.16 / AI Gateway 2.3) |
 | Principal groups and trusted IdPs | Kong Identity groups (`principal.groups` in CEL, 3.17 / AI Gateway 2.3) could replace sub-CGs in metadata; trusted IdPs JIT-provision principals |
 | Kong Operator manifests | `AIGateway*` CRDs could fill a Kubernetes tab for AI Gateway 2.x; there are no Kong Identity CRDs |

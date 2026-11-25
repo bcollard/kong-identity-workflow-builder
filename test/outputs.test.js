@@ -65,7 +65,7 @@ test("decK plugins match the Kong plugin schemas of the selected version", () =>
   report("decK plugin schema");
 });
 
-test("AI Gateway 2.x auth strategies and policies match the AI Gateway 2.2 plugin schemas", () => {
+test("AI Gateway 2.x auth strategies and policies match the plugin schemas of the runtime they pick", () => {
   for (const s of CLASSES.filter(c => c.product === "ai")) {
     const doc = yaml.load(render(X, s).cfg.decl.text);
     for (const gw of doc.ai_gateways || [doc]) {
@@ -73,7 +73,7 @@ test("AI Gateway 2.x auth strategies and policies match the AI Gateway 2.2 plugi
       for (const p of gw.policies || []) for (const e of checkConfig(p.type, p.config, target(s), `policies(${p.name})`)) fail(s, e);
     }
   }
-  report("AI Gateway 2.2 plugin schema");
+  report("AI Gateway 2.x plugin schema");
 });
 
 test("kongctl AI Gateway files match the kongctl schema", { skip: !KONNECT && "Konnect control plane out of scope" }, () => {
@@ -84,7 +84,7 @@ test("kongctl AI Gateway files match the kongctl schema", { skip: !KONNECT && "K
       // The explain schema describes top-level resource files, which carry an "ai_gateway" back-reference.
       // Nested items get it implicitly (lab-verified), so add it before validating.
       for (const k of Object.keys(forAjv)) if (Array.isArray(forAjv[k])) forAjv[k].forEach(it => { if (it && typeof it === "object") it.ai_gateway ??= "!ref aigw"; });
-      // `kongctl explain` (1.20.1 to 1.23.0) exports models as an empty closed object; check the fields the lab-applied file used instead.
+      // `kongctl explain` (1.20.1 to 1.29.0) exports models as an empty closed object; check the fields the lab-applied file used instead.
       for (const m of forAjv.models || []) for (const k of ["ref", "name", "display_name", "type", "formats", "targets", "config"]) if (!(k in m)) fail(s, `kongctl model ${m.name} lacks ${k}`);
       delete forAjv.models;
       if (!validateGateway(forAjv)) for (const e of validateGateway.errors.slice(0, 3))

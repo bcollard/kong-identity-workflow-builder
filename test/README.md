@@ -15,9 +15,9 @@ Terraform, lab badges, Konnect pruning) are reported as skipped when Konnect is 
 | File | What it proves |
 |---|---|
 | `wizard.test.js` | Step visibility, disabled options and their reasons, pruning after an upstream change, no dead ends |
-| `outputs.test.js` | For each runtime class (~4.4k): YAML parses; every decK plugin matches the real Kong 3.16 / 3.15 plugin schema; kongctl files match `kongctl explain` and the AI Gateway 2.2 plugin schemas; curl JSON bodies parse; Terraform uses existing `konnect_*` resources |
+| `outputs.test.js` | For each runtime class (~4.4k): YAML parses; every decK plugin matches the real Kong 3.16 / 3.15 plugin schema; kongctl files match `kongctl explain` and the plugin schemas of the AI Gateway runtime they pick (2.2, 2.3, 2.4); curl JSON bodies parse; Terraform uses existing `konnect_*` resources |
 | `consistency.test.js` | On every path (~64k): the groups table equals the groups in the config, ACLs only reference declared groups, the identity record shows up in the config, sequence lanes match configured plugins, inspector and analytics agree, nothing 3.16-only for 3.15, tab rules, lab badges |
-| `deck-ai.test.js` | Self-managed AI Gateway 2.x: the file only uses fields `ai-deck-converter` reads (it ignores unknown keys silently), and converting it the way `deck ai sync` does gives no warnings, valid AI Gateway 2.2 plugins, the chosen auth plugin, the target plugin, subscription ACLs, token budgets, groups and consumer membership |
+| `deck-ai.test.js` | Self-managed AI Gateway 2.x: the file only uses fields `ai-deck-converter` reads (it ignores unknown keys silently), and converting it the way `deck ai sync` does gives no warnings (except the known converter false positives listed in `knownFalsePositive`), valid plugins for the runtime the path picks, the chosen auth plugin, the target plugin, subscription ACLs, token budgets, groups and consumer membership |
 | `scenario-id.test.js` | Every path has a unique ID that round-trips; every option has a permanent code; codes are append-only versus the last `v*` tag; typos are caught; older and unknown IDs open with the right message; server routes, version stamp and `/api/scenarios/<id>` |
 | `render.test.js` | The real page in jsdom (served path `/identity-paths/`), shared links and the address bar: the DOM shows what the logic computed (lanes, steps, KPIs, groups table, badge, every code tab), a full click-through, disabled options stay unselectable |
 
@@ -25,15 +25,17 @@ Fixtures (`fixtures/`):
 - `schemas/<target>/*.json`: `/schemas/plugins/<name>` from real containers. Refresh with `make schemas` when a version changes.
 - `kongctl-ai_gateway.schema.json`: `kongctl explain ai_gateway --output json` (version in `kongctl-version.txt`).
   Known gaps handled in the test: `models` is exported as an empty object, and nested items don't need `ai_gateway`
-  (both applied fine with kongctl 1.20.1 in the lab; still the case in 1.23.0).
-- `schemas/aigw-<version>`: AI Gateway 2.x paths are checked against the snapshot of the version they pick (2.2 or 2.3).
-  2.3-only fields on entities (Token Vault, MCP `allow_when`, `min_runtime_version`) are checked against the kongctl schema.
+  (both applied fine with kongctl 1.20.1 in the lab; still the case in 1.29.0).
+- `schemas/aigw-<version>`: AI Gateway 2.x paths are checked against the snapshot of the version they pick (2.2, 2.3 or 2.4).
+  `aigw-2.4` comes from the `kong/kong-ai-gateway-dev:aigw-master` image (2.4.0) until a 2.4 image is on Docker Hub.
+  Fields that need 2.3+ on entities (Token Vault, MCP `allow_when`, `min_runtime_version`) are checked against the kongctl schema.
 - `terraform-resources.txt`: resource names from the `kong/konnect` and `kong/konnect-beta` provider docs.
 
 - `aigw-entity-model.fields.json`: YAML keys of the `deck ai sync` entity model, reflected from `ai-deck-converter`
   (`cd test/tools/aigw-convert && go run . fields > ../../fixtures/aigw-entity-model.fields.json`).
 
-`tools/aigw-convert/` pins `ai-deck-converter` to the version decK 1.68 vendors (v0.19.7). The conversion test needs Go and is
-skipped without it; bump the version in `go.mod` when decK bumps it.
+`tools/aigw-convert/` pins `ai-deck-converter` v0.45.0, the first release that knows AI Gateway 2.4 (decK 1.70 vendors v0.32.1,
+which stops at 2.3). Each path is converted with its own runtime as `MinRuntimeVersion`; decK passes the newest runtime its
+converter knows. The conversion test needs Go and is skipped without it; follow decK when it vendors a newer converter.
 
 `node test/classes.js` prints how many paths and runtime classes the wizard has.

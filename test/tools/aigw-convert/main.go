@@ -1,7 +1,8 @@
-// aigw-convert runs the converter behind `deck ai sync` (ai-deck-converter, pinned in go.mod to the version decK vendors).
+// aigw-convert runs the converter behind `deck ai sync` (ai-deck-converter, pinned in go.mod).
+// decK passes the newest runtime its converter knows as MinRuntimeVersion; this tool passes the runtime of each scenario.
 //
 //	go run . fields   > ../../fixtures/aigw-entity-model.fields.json   # YAML keys each entity accepts
-//	go run . convert  < docs.json                                      # [yaml, ...] -> [{kong, warnings, error}, ...]
+//	go run . convert  < docs.json                                      # [{yaml, version}, ...] -> [{kong, warnings, error}, ...]
 package main
 
 import (
@@ -67,21 +68,48 @@ func main() {
 		m["identity_providers"] = m["auth_strategies"] // deprecated alias still accepted on input
 		must(enc.Encode(m))
 	case "convert":
-		var docs []string
+		var docs []struct {
+			YAML    string `json:"yaml"`
+			Version string `json:"version"`
+		}
 		must(json.NewDecoder(os.Stdin).Decode(&docs))
 		out := make([]result, len(docs))
 		for i, d := range docs {
-			kong, warnings, err := convert.Convert([]byte(d), convert.Options{}) // same options as `deck ai sync`
-			out[i] = result{Kong: string(kong), Warnings: warnings}
-			if err != nil {
-				out[i].Error = err.Error()
-			}
+			out[i] = convertOne(d.YAML, d.Version)
 		}
 		must(enc.Encode(out))
 	default:
 		fmt.Fprintln(os.Stderr, "usage: aigw-convert fields|convert")
 		os.Exit(2)
 	}
+}
+
+// convertOne mirrors decK's convertAIGatewaySource: ERROR issues fail the run, the others are warnings.
+func convertOne(src, version string) result {
+	res, err := convert.Convert([]byte(src), convert.Options{MinRuntimeVersion: version})
+	if err != nil {
+		return result{Error: err.Error()}
+	}
+	var r result
+	var errs []string
+	for _, issue := range res.Issues {
+		if issue.Severity == convert.Error {
+			errs = append(errs, issue.String())
+		} else {
+			r.Warnings = append(r.Warnings, issue.String())
+		}
+	}
+	if len(errs) > 0 {
+		r.Error = strings.Join(errs, "; ")
+		return r
+	}
+	kong, err := res.Output.ToYAML()
+	if err != nil {
+		r.Error = err.Error()
+		return r
+	}
+	r.Kong = string(kong)
+	return r
 }
 
 func must(err error) {
