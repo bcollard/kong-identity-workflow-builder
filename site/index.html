@@ -138,6 +138,8 @@ code{font-family:var(--mono);font-size:12px;color:var(--accent-text)}
 .notice{border:1px solid var(--warn);color:var(--text);border-radius:8px;padding:10px 14px;font-size:13px}
 .notice.info{border-color:var(--line)}
 .notice .btn{margin-left:10px}
+.seqview{display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0}
+.seqview .btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .diagram{overflow-x:auto;padding:8px 8px 0}
 .diagram svg{display:block;width:100%;height:auto}
 .caption{border-top:1px solid var(--line);padding:12px 16px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px}
@@ -699,7 +701,7 @@ function buildSeq(s,d){
       if(mcpToolAcl) steps.push({f:"px",t:"px",l:s.access==="claimacl"?`tool ACL from .${d.idp.groups} claim ✓`:`tool ACL allow [${d.tgt.sub}] ✓`,h:"Tool-level access",p:"ai-mcp-proxy filters tools/list and rejects tools/call for tools the caller may not use.",set:{decision:"tool ACL: allowed"}});
       if(d.vault){
         steps.push({f:"px",t:"tv",l:`RFC 8693 exchange (${d.vault.subject}) · provider ${d.vault.name}`,h:"Upstream credential request",p:`RFC 8693 exchange with Token Vault over mTLS, not with ${d.vault.label}. Token Vault identifies the caller from the ${d.vault.subject==="api_key"?"Kong Identity API key":"token's iss and sub"}. Cached up to 5 minutes.`});
-        steps.push({f:"tv",t:"px",l:d.vault.mode==="user"?`${who.name}'s ${d.vault.label} token`:`shared ${d.vault.label} credential`,h:d.vault.mode==="user"?"The caller's own credential":"The directory's shared credential",p:d.vault.mode==="user"?`Stored at enrollment and refreshed by Token Vault. First call: an enrollment URL instead, served as a virtual authenticate tool; the caller consents on ${d.vault.label} once.`:d.vault.auth==="static"?"Stored once by an admin.":"Enrolled once by an admin, refreshed by Token Vault.",set:{decision:`token vault: ${d.vault.name} credential released`}});
+        steps.push({f:"tv",t:"px",l:d.vault.mode==="user"?`${who.name}'s ${d.vault.label} token`:`shared ${d.vault.label} credential`,h:d.vault.mode==="user"?"The caller's own credential":"The directory's shared credential",p:d.vault.mode==="user"?`Stored at enrollment and refreshed by Token Vault. Until the caller enrolls, an enrollment URL comes back instead: switch the diagram to "First call (enrollment)".`:d.vault.auth==="static"?"Stored once by an admin.":"Enrolled once by an admin, refreshed by Token Vault.",set:{decision:`token vault: ${d.vault.name} credential released`}});
       }
       steps.push({f:"px",t:"up",l:s.target==="models"?"chat completion":"tools/call",h:"Upstream call",p:s.target==="models"?"Provider key injected by the gateway.":d.vault?`${d.vault.label} credential injected by the gateway.`:"Tool-level ACLs filter tools/list and tools/call."});
       steps.push({f:"up",t:"c",l:"200 OK",h:"Response",p:""});
@@ -710,6 +712,46 @@ function buildSeq(s,d){
   steps[steps.length-1].p = steps[steps.length-1].p || "Usage is attributed without a Consumer when the record is claims or principals.";
   const band = d.ai?`KONG AI GATEWAY ${s.version||"2.2"} · ${d.tgt.kind.toUpperCase()} ${d.tgt.name}`:d.ai1?`KONG GATEWAY ${ver} + AI PLUGINS · ${d.tgt.kind.toUpperCase()} ROUTE ${d.tgt.name}`:`KONG GATEWAY ${ver} · SERVICE ${d.tgt.name}`;
   return {lanes,steps,band};
+}
+
+/** First-call view for "Token Vault · each caller's own account": the caller has no stored credential yet, so the gateway
+ *  hands out an enrollment URL; the caller consents on the service once, then retries. null when the path has no enrollment. */
+const hasEnrollView = d=>!!(d.vault&&d.vault.mode==="user");
+function buildSeqEnroll(s,d){
+  if(!hasEnrollView(d)) return null;
+  const v=d.vault, who=d.who, human=s.caller==="employees";
+  const signIn = human && s.cred!=="apikey";   // enrollment protection: openid-connect strategy with the credential manager
+  const elicit = aigw24(s);
+  const lanes=[L("c",who.label,who.name,"actor"),L("auth",d.auth.plugin,"AuthStrategy","plugin"),L("px","ai-mcp-proxy","MCP","plugin"),
+    L("tv","Token Vault","Kong Identity","store"),L("br","Browser",human?who.name:"app owner","actor")];
+  if(signIn) lanes.push(L("idp",d.idp.label,"sign-in","idp"));
+  lanes.push(L("svc",v.label,"OAuth consent","idp"));
+  const st=[];
+  st.push({f:"c",t:"auth",l:`POST /mcp (${elicit?"tools/call":"tools/list"})${s.cred==="apikey"?" · apikey":" · Bearer"}`,h:"First call to the MCP server",
+    p:"The caller authenticates and passes the access checks exactly as in the steady state."});
+  st.push({f:"auth",t:"px",l:"authenticated ✓",h:"Caller identified",p:"",set:{principal:`${who.name}${d.pr?" (principal)":` (${s.cred==="apikey"?"API key":"token iss + sub"})`}`}});
+  st.push({f:"px",t:"tv",l:`RFC 8693 exchange (${v.subject}) · provider ${v.name}`,h:"Upstream credential request",p:"The same exchange as on every call, over mTLS."});
+  st.push({f:"tv",t:"px",l:"not enrolled → enrollment URL",h:`No ${v.label} credential for ${who.name} yet`,
+    p:"Token Vault has nothing stored for this caller and provider. It returns an enrollment URL, valid 10 minutes.",set:{decision:`token vault: ${who.name} not enrolled`}});
+  st.push(elicit
+    ? {f:"px",t:"c",l:"URL elicitation (enrollment URL)",h:"The client asks the user to open the link",p:"AI Gateway 2.4 sends an MCP URL elicitation. A client without elicitation support gets the URL in the tool result text instead."}
+    : {f:"px",t:"c",l:"virtual authenticate tool → URL",h:"Virtual tools until enrollment",p:"tools/list shows virtual authenticate and check_authentication_status tools instead of the real ones. Calling authenticate returns the enrollment URL."});
+  st.push({f:"c",t:"br",l:"open the enrollment URL",h:human?`${who.name} opens the link`:"The app owner opens the link",
+    p:human?"In the browser, as the same person who made the call.":"An app or agent can't consent itself: a person enrolls the account it will use, once per app or agent."});
+  st.push({f:"br",t:"tv",l:"GET enrollment page",h:"Enrollment page",p:"Served for the provider and the caller the URL was issued to."});
+  if(signIn){
+    st.push({f:"br",t:"idp",l:"sign in",h:`Sign in at ${d.idp.label}`,p:"Enrollment protection: the page checks the signed-in user is the caller the link was issued to, so a forwarded link can't store someone else's account."});
+    st.push({f:"idp",t:"br",l:`${d.credClaim||"sub"}: ${who.name} ✓`,h:"Same person as the caller",p:"",set:{enrollment:`signed in as ${who.name}`}});
+  }
+  st.push({f:"br",t:"svc",l:v.auth==="dcr"?"authorize Token Vault (registered by DCR)":"authorize your OAuth app",h:`Consent on ${v.label}'s own screen`,
+    p:v.auth==="dcr"?`Token Vault registered its own client on ${v.label} (DCR). The user approves the scopes there.`:`The user approves the OAuth app you registered on ${v.label}. ${v.label} never sees your IdP token.`});
+  st.push({f:"svc",t:"tv",l:"authorization code (callback)",h:"Token Vault stores the token",
+    p:`Token Vault exchanges the code for ${who.name}'s ${v.label} token, encrypts it with the directory's vault public key and stores it. It refreshes the token before it expires.`,
+    set:{decision:`token vault: ${v.label} token stored for ${who.name}`}});
+  st.push({f:"c",t:"px",l:elicit?"retry the call":"check_authentication_status → real tools",h:"Back in the client",
+    p:`${elicit?"The elicitation completes and the client retries.":"check_authentication_status confirms the enrollment; the real tools replace the virtual ones."} From here every call follows the steady-state flow: the exchange returns ${who.name}'s ${v.label} token.`});
+  st.forEach(x=>{if(x.set) for(const k in x.set) if(x.set[k]===undefined) delete x.set[k]});
+  return {lanes,steps:st,band:`KONG AI GATEWAY ${s.version} · FIRST CALL`};
 }
 
 /* ---------- config generation ---------- */
@@ -1682,7 +1724,7 @@ function openScenario(id){
 }
 
 /* ---------- result rendering ---------- */
-let seq=null, step=0, timer=null, playing=false, tab="decl";
+let seq=null, step=0, timer=null, playing=false, tab="decl", seqView="steady";   // seqView: steady | enroll (Token Vault first call)
 const NS="http://www.w3.org/2000/svg";
 function sv(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e}
 const COL=120,PADL=10,Y0=100,DY=38;
@@ -1728,7 +1770,8 @@ function stop(){playing=false;if(timer)clearInterval(timer);timer=null;const b=d
 function renderResult(){
   const r=document.getElementById("result");
   if(!complete()){r.hidden=true;return}
-  r.hidden=false; const d=derive(S); seq=buildSeq(S,d);
+  r.hidden=false; const d=derive(S); const ENR=hasEnrollView(d); if(!ENR) seqView="steady";
+  const pickSeq=()=>seqView==="enroll"?buildSeqEnroll(S,d):buildSeq(S,d); seq=pickSeq();
   const lab=labMatch(S);
   const CFG={decl:genDeclarative(S,d),api:genApi(S,d),tf:genTf(S,d)};
   const tabs=outputTabs(S,CFG);
@@ -1752,7 +1795,7 @@ function renderResult(){
        :lab?`<span class="badge draft" title="The lab ran its own configuration for this identity flow; this generated file wasn't applied">Identity flow lab-tested · ${lab} · this file not applied</span>`
        :`<span class="badge draft">Generated draft · not tested end to end</span>`}
      <span class="share"><code id="sid" title="Scenario ID: the answers plus the version that generated this page">${scenarioId(S)}</code><button class="btn" id="bshare">Copy link</button></span></div></div>
-   <div class="panel stage"><div class="diagram" id="diagram"></div>
+   <div class="panel stage">${ENR?`<div class="seqview" role="group" aria-label="Sequence to show">${[["steady","Steady state"],["enroll","First call (enrollment)"]].map(([v,l])=>`<button class="btn" data-view="${v}" aria-pressed="${seqView===v}">${l}</button>`).join("")}</div>`:""}<div class="diagram" id="diagram"></div>
        <div class="caption" aria-live="polite"><span class="stepno" id="sn"></span><div><h4 id="sh"></h4><p id="sp"></p></div></div>
        <div class="ctl"><button class="btn primary" id="bp">Play</button><button class="btn" id="bprev">Previous</button><button class="btn" id="bnext">Next</button></div>
      <details class="inspector fold"><summary><h3>Request context after this step</h3></summary><dl class="kv" id="kv"></dl></details>
@@ -1774,6 +1817,10 @@ function renderResult(){
        ${tabs.includes("api")?`<button role="tab" data-t="api">Konnect API</button>`:""}${tabs.includes("tf")?`<button role="tab" data-t="tf">Terraform</button>`:""}</div>
      <div class="codewrap"><button class="btn copy" id="bcopy">Copy</button><pre class="code" id="code"></pre></div></div>`;
   drawSeq(); moveTo(seq.steps.length-1,false);
+  r.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{ if(seqView===b.dataset.view) return;
+    stop(); seqView=b.dataset.view; seq=pickSeq();
+    r.querySelectorAll("[data-view]").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.view===seqView)));
+    drawSeq(); moveTo(seq.steps.length-1,false); });
   document.getElementById("bp").onclick=()=>playing?stop():play();
   document.getElementById("bprev").onclick=()=>{stop();moveTo(step-1,true)};
   document.getElementById("bnext").onclick=()=>{stop();moveTo(step+1,true)};

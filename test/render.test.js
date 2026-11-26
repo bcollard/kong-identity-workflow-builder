@@ -261,6 +261,18 @@ test("click through an AI Gateway 2.3 MCP server with Token Vault", { skip: !KON
   assert.ok(fold && !fold.open, "Watch out is folded by default");
   const ctx = res.querySelector("details.inspector");
   assert.ok(ctx && !ctx.open && ctx.querySelector("#kv").children.length > 0, "request context is folded under the diagram and filled");
+  // sequence switch: steady state by default, the first call (enrollment) on demand
+  const views = [...res.querySelectorAll("[data-view]")];
+  assert.deepEqual(views.map(b => text(b)), ["Steady state", "First call (enrollment)"]);
+  assert.equal(views[0].getAttribute("aria-pressed"), "true");
+  const steadyCount = text(doc.getElementById("sn"));
+  views[1].click();
+  assert.equal(res.querySelector('[data-view="enroll"]').getAttribute("aria-pressed"), "true");
+  assert.notEqual(text(doc.getElementById("sn")), steadyCount, "the diagram plays other steps");
+  assert.match(doc.getElementById("diagram").textContent, /Browser/);
+  assert.match(text(doc.getElementById("sh")), /Back in the client/, "ends on the retry");
+  res.querySelector('[data-view="steady"]').click();
+  assert.equal(text(doc.getElementById("sn")), steadyCount);
   w.close();
 });
 
@@ -270,6 +282,7 @@ test("Load an example, then Build the workflow, shows the result", { skip: !KONN
   d.getElementById("b-sample").click();
   d.getElementById("b-next").click();
   assert.equal(d.getElementById("result").hidden, false, "the example answers every visible step");
+  assert.equal(d.querySelector("[data-view]"), null, "no sequence switch without Token Vault");
 });
 
 test("Build the workflow with a step left unanswered goes to that step", () => {

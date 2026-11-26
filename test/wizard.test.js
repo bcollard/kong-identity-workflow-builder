@@ -229,6 +229,25 @@ test("AI Gateway 2.4 key-auth reads Bearer keys on self-managed gateways; Konnec
   assert.ok(d.notes.some(n => /Konnect key-auth strategies don't accept that field yet/.test(n)));
 });
 
+test("Token Vault first-call view: only for per-user enrollment; lanes and steps agree; version-aware hand-off", () => {
+  const base = { product: "ai", deploy: "konnect", caller: "employees", target: "mcp", cred: "oidc", idp: "okta", record: "claims", access: "none", upstream: "vault-user", provider: "github", plans: ["none"], analytics: ["konnect"] };
+  const view = st => { reset({ ...base, ...st }); return X.buildSeqEnroll(X.S, X.derive(X.S)); };
+  assert.equal(view({ version: "2.4", upstream: "vault-shared" }), null, "shared account: an admin enrolls once, no first-call flow");
+  assert.equal(view({ version: "2.4", upstream: "none", provider: null }), null);
+  for (const version of ["2.3", "2.4"]) {
+    const v = view({ version }), ids = v.lanes.map(l => l.id);
+    for (const s of v.steps) assert.ok(ids.includes(s.f) && ids.includes(s.t), `${version}: step "${s.l}" uses declared lanes`);
+    for (const id of ids) assert.ok(v.steps.some(s => s.f === id || s.t === id), `${version}: lane ${id} is used`);
+    assert.ok(ids.includes("idp"), "employees with OIDC sign in before they enroll (enrollment protection)");
+    assert.match(v.steps.map(s => s.l).join(" "), version === "2.4" ? /URL elicitation/ : /virtual authenticate/);
+    assert.ok(v.steps.length <= 15, "the view stays short");
+  }
+  const keys = view({ version: "2.4", cred: "apikey", idp: null, record: "principals" });
+  assert.ok(keys && !keys.lanes.some(l => l.id === "idp"), "Kong Identity API keys: no sign-in step");
+  const app = view({ version: "2.4", caller: "apps", cred: "cc", idp: "ki", record: "principals" });
+  assert.match(app.steps.find(s => s.t === "br").h, /app owner/, "a person enrolls for an app");
+});
+
 test("MCP servers with an ACL: the apply steps list the access tests", () => {
   reset({ product: "ai", deploy: "self", version: "2.3", caller: "employees", target: "mcp", cred: "oidc", idp: "okta", record: "claims", access: "claimacl", plans: ["none"], analytics: ["prom"] });
   const d = X.derive(X.S), cfg = { decl: X.genDeclarative(X.S, d), api: X.genApi(X.S, d) };
