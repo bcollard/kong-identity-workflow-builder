@@ -239,11 +239,19 @@ test("Token Vault first-call view: only for per-user enrollment; lanes and steps
     for (const s of v.steps) assert.ok(ids.includes(s.f) && ids.includes(s.t), `${version}: step "${s.l}" uses declared lanes`);
     for (const id of ids) assert.ok(v.steps.some(s => s.f === id || s.t === id), `${version}: lane ${id} is used`);
     assert.ok(ids.includes("idp"), "employees with OIDC sign in before they enroll (enrollment protection)");
-    assert.match(v.steps.map(s => s.l).join(" "), version === "2.4" ? /URL elicitation/ : /virtual authenticate/);
+    const labels = v.steps.map(s => s.l).join(" ");
+    assert.match(labels, /token_vault_authenticate/);
+    assert.match(labels, version === "2.4" ? /-32042 URL elicitation.*elicitation\/complete/ : /tool result text.*check_authentication_status/);
+    assert.match(labels, /GET \/_vault\/callback\/initiate.*GET \/_vault\/callback \(code, state\)/, "the browser flow goes through the gateway's /_vault routes");
+    assert.ok(!v.steps.some(s => s.f === "svc" && s.t === "tv"), "the service calls back the gateway, not Token Vault");
     assert.ok(v.steps.length <= 15, "the view stays short");
   }
   const keys = view({ version: "2.4", cred: "apikey", idp: null, record: "principals" });
   assert.ok(keys && !keys.lanes.some(l => l.id === "idp"), "Kong Identity API keys: no sign-in step");
+  reset({ ...base, version: "2.4" });
+  const y = X.genDeclarative(X.S, X.derive(X.S)).text;
+  assert.match(y, /client_id: \[kong-vault-enrollment\]/, "enrollment protection needs a client_id for the sign-in");
+  assert.ok(X.derive(X.S).notes.some(n => /_vault\/callback/.test(n) && /_vault\/callback\/initiate/.test(n)), "redirect URIs are spelled out");
   const app = view({ version: "2.4", caller: "apps", cred: "cc", idp: "ki", record: "principals" });
   assert.match(app.steps.find(s => s.t === "br").h, /app owner/, "a person enrolls for an app");
 });
@@ -253,4 +261,30 @@ test("MCP servers with an ACL: the apply steps list the access tests", () => {
   const d = X.derive(X.S), cfg = { decl: X.genDeclarative(X.S, d), api: X.genApi(X.S, d) };
   const notes = X.applyPlan(X.S, d, cfg, X.outputTabs(X.S, cfg)).map(st => st.note).join(" ");
   assert.match(notes, /empty groups claim/);
+});
+
+test("employees on AI Gateway 2.3+: principals provisioned just in time by the trusted IdP; lookup claim matches the identity", konnectOnly, () => {
+  const base = { product: "ai", deploy: "konnect", caller: "employees", target: "models", cred: "oidc", record: "principals", access: "subcg", plans: ["llm"], analytics: ["konnect"] };
+  reset({ ...base, version: "2.3", idp: "okta" });
+  let d = X.derive(X.S);
+  assert.ok(d.jit, "JIT on 2.3 with an external IdP");
+  assert.equal(JSON.stringify(d.jit.mapping.metadata), JSON.stringify({ bu: "department", consumer_groups: "groups" }));
+  assert.equal(d.princClaim, null, "Okta employees are looked up on sub, the default");
+  assert.match(X.genDeclarative(X.S, d).text, /principals: \{ enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true, jit: \{ claims: \[name, email, department, groups\] \} \}/);
+  const api = X.genApi(X.S, d).text;
+  assert.match(api, /"jit_provisioning_enabled":true,"vault_access_enabled":false,"jit":\{"mapping":\{"display_name":"name"/);
+  assert.doesNotMatch(api, /# Principal \(identity/, "no principal to create per employee");
+  assert.ok(d.notes.some(n => /401 \(principals\.error_on_miss/.test(n)));
+  // Keycloak keys employees on preferred_username: the lookup and the JIT identifier follow it
+  reset({ ...base, version: "2.4", idp: "keycloak" });
+  d = X.derive(X.S);
+  assert.equal(d.princClaim, "preferred_username");
+  assert.equal(d.jit.mapping.identifier, "preferred_username");
+  assert.match(X.genDeclarative(X.S, d).text, /principal_claim: \[preferred_username\]/);
+  // 2.2 has no principals.jit: principals are created ahead, with principal_claim matching their identity
+  reset({ ...base, version: "2.2", idp: "keycloak" });
+  d = X.derive(X.S);
+  assert.equal(d.jit, null);
+  assert.match(X.genApi(X.S, d).text, /# Principal \(identity/);
+  assert.match(X.genDeclarative(X.S, d).text, /principal_claim: \[preferred_username\]/);
 });

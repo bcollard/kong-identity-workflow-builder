@@ -37,7 +37,8 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
 - A principal is the identity of an external client, workload or human calling a gateway. It is not a Konnect user.
 - One directory per region. The data plane looks principals up over mTLS (`/<directory>/v2/authenticate` and
   `fetch-principal`) and caches them for the lower of the directory TTL (600 s by default) and `db_cache_ttl`; misses
-  are cached 60 s at most. The docs limit uncached lookups to 100/s per directory.
+  are cached 60 s at most (the directory also sets `negative_ttl_secs`, 600 s by default; its effect on the data plane
+  isn't measured). The docs limit uncached lookups to 100/s per directory.
 - `metadata.consumer_groups` entries resolve by UUID or by name in the data plane; the docs only promise UUIDs, so
   generated metadata should switch to UUIDs if names stop resolving (Kong source).
 - Identity types: `oidc {issuer, claim{name,value}}` for tokens from any IdP; `auth_server_client {auth_server_id, client_id}`
@@ -48,6 +49,34 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   values are bool, string, int or arrays of strings/ints.
 - Directories also hold principal groups (with group API keys), principal basic-auth credentials and trusted IdPs
   (`issuer_url`, `jwks_uri`, JIT provisioning with claim mapping).
+- `openid-connect` looks the principal up by issuer + `principals.principal_claim` (default `sub`): the principal's `oidc`
+  identity must use the same claim name, so the builder sets `principal_claim` whenever the caller claim isn't `sub`
+  (Keycloak `preferred_username`, Entra `preferred_username`/`azp`, AD FS `upn`/`appid`). No match → 401
+  (`error_on_miss`, default true); `error_on_miss: false` continues without a principal. Without `principals.enabled`
+  the caller is only a credential (the `credential_claim` value) (`openid-connect/handler.lua` `lookup_ki_principal`).
+- Automatic user provisioning (JIT, AI Gateway 2.3.0 changelog; `openid-connect` schema `min_ai_gateway_version = "2.3"`):
+  - gateway: `principals.jit.claims` (named claims) or `principals.jit.all_claims` sends token claims with the lookup.
+    By default only the lookup claim goes, so a JIT principal gets no metadata;
+  - Konnect: the trusted IdP decides. `jit_provisioning_enabled` (default true; console "Automatic user provisioning")
+    creates a principal when none matches issuer + `jit.mapping.identifier` (default `sub`, must equal the gateway's
+    `principal_claim`). `jit.mapping` sets `display_name`, `email` (custom identity; an existing principal with that
+    email adopts the login), `groups` (Kong Identity groups, created if missing, max 100) and `metadata` (key → claim,
+    max 64; console "Set metadata"). On an existing principal the mapped metadata keys are rewritten on each lookup and
+    the others kept (Konnect UI strings, AI Gateway 2.3.0 changelog: "provisions or updates");
+  - `vault_access_enabled` is separate (default false): a trusted IdP used only for gateway callers leaves it off.
+    Trusted IdPs still need `vault_enabled: true` on the directory: without it Konnect answers 403 "Token vault is not
+    enabled for this directory" on `/trusted-idps` (`lab-verified` 2026-11-27);
+  - IdP changes reach the gateway only when the cached principal expires: directory `ttl_secs` / `negative_ttl_secs`
+    (default 600, minimum 300). A group added in Keycloak opened access 305 s after the change with `ttl_secs: 300`;
+  - turning provisioning off keeps existing JIT principals working; an unknown user gets 401 (`error_on_miss`);
+  - lab note: on 2026-11-27 Konnect started sending an `ai_gateway_settings` entity that an `aigw-master` build cached
+    from before 2026-11-26 rejects ("unknown delta type"): the node loads no config and answers 404. Pull a fresh image;
+  - kongctl `identity.directories[].trusted_idps[].jit`, Terraform `konnect_identity_trusted_idp.jit`;
+  - the builder uses it for employees with an external IdP on AI Gateway 2.3+ (Konnect): `jit.claims` = name, email,
+    department and the groups claim; mapping `bu ← department`, `consumer_groups`/`subscriptions ← groups claim`.
+    `lab-verified` 2026-11-27 on Konnect (2.3.2 and 2.4.0 data planes, Keycloak employees, sub-CG ACL + LLM budget):
+    first call provisions the principal (display name, `preferred_username` identity, `bu`, `consumer_groups`), the
+    groups drive the ACL and budget, a principal created ahead resolves on `principal_claim: [preferred_username]`.
 - Plugins with `principals.enabled`: `key-auth`, `basic-auth`, `openid-connect` (`principal_claim`, `principal_by`,
   `match_consumer`, `match_consumer_groups`, `error_on_miss`). In principals mode `key-auth` skips local credentials
   (`identity_realms: []`).
@@ -180,16 +209,41 @@ kongctl docs, Konnect AI Gateway OpenAPI):
   static secrets, encrypted with the directory's vault public key (RSA ≥ 2048 or EC ≥ 256, up to 5 keys). The matching
   private key stays on the data planes, so Konnect can't decrypt them. The AI Gateway exchanges the caller's token for the
   upstream credential (RFC 8693, over mTLS) and injects it; a caller who hasn't enrolled gets an enrollment URL (valid
-  10 minutes) through virtual `authenticate` / `check_authentication_status` MCP tools. Exchanges are cached 5 minutes
+  10 minutes) through the virtual `token_vault_authenticate` / `token_vault_check_authentication_status` MCP tools (see
+  First-call enrollment). Exchanges are cached 5 minutes
   per node, optionally in Redis.
 - Provider templates (`template_name`): `github`, `slack`, `atlassian`, `google` (OAuth app: `client_id` + `client_secret`);
   `snowflake`, `databricks` (plus your endpoints); `atlassian-rovo`, `datadog`, `miro` (DCR, no client); `custom-oauth`
   (client + endpoints); `static_secret` (API key stored on the provider, shared only). `credential_type`: `user` (default
   for OAuth: each principal enrolls) or `shared` (an admin enrolls once, or stores the secret).
 - Upstream services need no RFC 8693 support (GitHub and Atlassian have none): the exchange runs between the gateway and
-  Token Vault. At enrollment the user consents on the service, Token Vault exchanges the authorization code itself, then
-  refreshes the token before expiry (provider `refresh_buffer_seconds`, with locking; a failed refresh keeps releasing a
-  still-valid token). Source: developer.konghq.com/kong-identity/token-vault/.
+  Token Vault. At enrollment the user consents on the service and the gateway's `/_vault/callback` redeems the code (see
+  First-call enrollment); Token Vault then refreshes the token before expiry (provider `refresh_buffer_seconds`, with
+  locking; a failed refresh keeps releasing a still-valid token). Source: developer.konghq.com/kong-identity/token-vault/
+  (which says Token Vault redeems the code; the 2.3.3 and 2.4 source and the lab show the gateway does).
+- First-call enrollment (`lab-verified` 2026-11-25 on Konnect with 2.3.2 and 2.4.0 data planes, Keycloak as IdP and as the
+  upstream OAuth service through `custom-oauth`, scripted MCP client and browser; source `kong/llm/token_vault/enrollment.lua`,
+  `kong/plugins/ai-mcp-proxy/vault_mcp.lua`):
+  1. A caller with no stored credential sees only `token_vault_authenticate` and `token_vault_check_authentication_status`
+     in `tools/list` (prefixed `<provider>/` when one route aggregates several providers).
+  2. `token_vault_authenticate` returns the enrollment URL, which points to the gateway: `<gateway>/_vault/callback/initiate?token=…`.
+     On 2.4 a client that declared URL elicitation at `initialize` (`capabilities.elicitation.url`) gets JSON-RPC error
+     `-32042` with `data.elicitations[0].url`; other clients, and 2.3, get the URL in the tool result text.
+  3. `/_vault/callback/initiate` (`token-vault-callback-handler`, lowered by the converter) logs the user in with the
+     strategy's `openid-connect` (authorization code, `token_endpoint_auth_method: none`), so the strategy needs a
+     `client_id`: a public client with redirect URI `<gateway>/_vault/callback/initiate`. The builder emits a placeholder.
+  4. The gateway resolves the enrollment with Kong Identity, passing the signed-in user's token: a different user gets
+     "Enrollment failed" (`invalid_target`) before any consent screen (enrollment protection).
+  5. The gateway redirects to the service's consent screen with the OAuth state as a cookie; the service redirects back
+     to `<gateway>/_vault/callback`, which checks the state cookie, redeems the code at the service's token endpoint,
+     encrypts the token with the vault key and stores it in Kong Identity. The page says "Authorization complete".
+     The OAuth app's redirect URI is `<gateway>/_vault/callback`.
+  6. 2.4 with URL elicitation: the session's SSE stream (GET) receives `notifications/elicitation/complete` and
+     `notifications/tools/list_changed` (the gateway polls every 2 s); retrying `token_vault_authenticate` answers "Already
+     authorized". Text clients call `token_vault_check_authentication_status` ("Authorization complete"); it also clears
+     the cached "not enrolled" answer, which the retry alone does not.
+  7. The gated session then answers 404 and the client re-initializes (MCP spec); the new session lists the real tools,
+     and the upstream receives the user's stored token, never the gateway token.
 - Callers are identified from a trusted IdP token (`iss` + `sub`; trusted IdP on the directory with
   `vault_access_enabled: true`, issuer equal to the token's `iss`; principals are provisioned just in time) or from a Kong
   Identity API key (`subject_token_type: api_key`). Consumer credentials can't be exchanged. Kong Identity auth servers

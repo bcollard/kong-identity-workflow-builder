@@ -30,8 +30,9 @@ on Consumers) and API Gateway on Konnect (Kong Identity apps with principals). R
 
 The version step offers 2.3 (since v1.8.0): MCP `allow_when` and Token Vault use it. Still to do:
 
-- Lab runs: Token Vault per-user (Okta or Keycloak, GitHub) and shared static secret, including the first-call enrollment
-  view (v1.10.2: URL elicitation on 2.4, virtual tools on 2.3, enrollment sign-in, consent, retry); MCP `allow_when`.
+- Lab runs: Token Vault per-user with a real catalog provider (GitHub) and with DCR (Atlassian Rovo), shared static
+  secret, Kong Identity API keys as the subject token; MCP `allow_when`. (Per-user `custom-oauth` with Keycloak, both
+  enrollment modes, is lab-verified since v1.10.3.)
 - Token Vault for model providers (`token_vault` on `model_providers`), selectors on shared credentials (one key per team),
   several upstream MCP servers behind one `listener`, Redis credential cache.
 - MCP tool ACLs with CEL.
@@ -52,6 +53,12 @@ The version step offers 2.4 (since v1.10.0). Still to do:
 - Agent and MCP server upstream `targets` + `balancer` (2.4 entity model).
 - Report the converter false positive (`mcpRouteIdentifiesCaller` ignores `consumer_groups_claim`) upstream.
 - kongctl 1.27+ `identity:` block in the kongctl tab for Konnect principals paths (today the Konnect API tab names the path).
+
+## Kong Identity JIT provisioning
+
+- Lab-verified on 2.3.2 and 2.4.0 (Keycloak). Not run: Okta or Entra (`oid` as identifier), `subscriptions` mapped from
+  the groups claim (metadata ACL), `jit.all_claims`.
+- API Gateway: `principals.jit` is on `kong-ee` master (no 3.16 release seen yet); offer it once a Kong Gateway release ships it.
 
 ## Wizard variables not covered yet
 

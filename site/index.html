@@ -485,6 +485,9 @@ function derivePortal(s){
   if(A.includes("otel")) an.push({tool:"OpenTelemetry",where:"opentelemetry plugin → collector",dims:"kong.auth.principal.id / display_name on request counts"});
   return {ai:false,ai1:false,aiAny:false,portal:true,pr:false,cl:false,co,who,idp,tgt,credClaim,groups:[],meta:{},warns,notes,auth:{plugin:"ace",mode:"portal"},authStrategy:false,an,plans:s.plans||[]};
 }
+/** Extra principals fields: principal_claim when the lookup claim isn't sub, jit claims for automatic user provisioning. */
+const prExtraYaml = d=>(d.princClaim?`, principal_claim: [${d.princClaim}]`:"")+(d.jit?`, jit: { claims: [${d.jit.claims.join(", ")}] }`:"");
+const prExtraTf = d=>(d.princClaim?`, principal_claim = ["${d.princClaim}"]`:"")+(d.jit?`, jit = { claims = [${d.jit.claims.map(c=>`"${c}"`).join(", ")}] }`:"");
 function derive(s){
   if(s.caller==="portal") return derivePortal(s);
   const ai=isAI(s), ai1=isAI1(s), aiAny=ai||ai1, pr=s.record==="principals", cl=s.record==="claims", co=s.record==="consumers";
@@ -509,6 +512,16 @@ function derive(s){
   const buDim = (s.analytics||[]).includes("bu");
   if(buDim && !groups.some(g=>g.name.startsWith("bu-")) && (s.analytics.includes("konnect")||ai)) groups.push({name:`bu-${who.bu}`,kind:"bu",owner:ai?"AI team":"Org admin",carries:"nothing: lets analytics group by BU",memb});
   if(pr){ meta.bu=who.bu; if(groups.length) meta.consumer_groups=groups.map(g=>g.name); }
+  // OIDC principal lookups key on principal_claim (default sub): the oidc identity must use the same claim
+  const princClaim = pr && s.cred!=="apikey" && idp && s.idp!=="ki" && credClaim && credClaim!=="sub" ? credClaim : null;
+  // Automatic user provisioning (JIT, AI Gateway 2.3+): the trusted IdP creates the employee's principal on the first call
+  const jit = pr && ai && s.caller==="employees" && s.cred==="oidc" && idp && s.idp!=="ki" && s.deploy==="konnect" && aigwAtLeast(s,3) ? (()=>{
+    const metadata={bu:"department"};
+    if(meta.consumer_groups) metadata.consumer_groups=idp.groups;
+    if(meta.subscriptions) metadata.subscriptions=idp.groups;
+    const mapping=Object.assign(princClaim?{identifier:princClaim}:{}, {display_name:"name",email:"email",metadata});
+    return {mapping, claims:[...new Set(["name","email",...Object.values(metadata)])]};
+  })() : null;
   // auth
   let auth;
   if(s.cred==="apikey") auth = pr?{plugin:"key-auth",mode:"principals"}:{plugin:"key-auth",mode:"consumers"};
@@ -528,9 +541,10 @@ function derive(s){
   if(vault){
     notes.push(`Token Vault releases the ${vault.label} credential to the AI Gateway only (mTLS); the caller and its agent never see it.`);
     if(vault.mode==="user") notes.push(aigw24(s)
-      ? "A caller who hasn't enrolled gets an enrollment URL (valid 10 minutes): as an MCP URL elicitation when the client supports it (AI Gateway 2.4), otherwise in the text of the virtual authenticate and check_authentication_status tools. The real tools appear after enrollment."
-      : "A caller who hasn't enrolled sees virtual authenticate and check_authentication_status tools with an enrollment URL (valid 10 minutes). The real tools appear after enrollment.");
-    if(vault.auth!=="static") notes.push(`The RFC 8693 exchange runs between the AI Gateway and Token Vault only. ${vault.label} never receives your IdP token: ${vault.mode==="user"?"each caller":"an admin"} authorizes ${vault.auth==="dcr"?"the client Token Vault registered (DCR)":"your OAuth app"} once on ${vault.label}'s consent screen, Token Vault exchanges the authorization code itself, then refreshes the token before it expires (provider refresh_buffer_seconds).`);
+      ? "A caller who hasn't enrolled sees only the virtual token_vault_authenticate and token_vault_check_authentication_status tools. token_vault_authenticate returns the enrollment URL (valid 10 minutes): as an MCP URL elicitation (-32042) when the client declared URL mode at initialize (AI Gateway 2.4), otherwise in the tool result text. After enrollment the gated session ends (404) and the client re-initializes to get the real tools."
+      : "A caller who hasn't enrolled sees only the virtual token_vault_authenticate and token_vault_check_authentication_status tools; token_vault_authenticate returns the enrollment URL (valid 10 minutes) in its result text. After enrollment the gated session ends (404) and the client re-initializes to get the real tools.");
+    if(vault.mode==="user"&&vault.auth!=="static") notes.push(`The enrollment runs through the gateway's /_vault routes: register https://<gateway>/_vault/callback as the redirect URI of ${vault.auth==="dcr"?"the client Token Vault registers (DCR does it)":`your ${vault.label} OAuth app`}${s.cred!=="apikey"?`, and https://<gateway>/_vault/callback/initiate on the public ${d0issuer(s)?IDP[s.idp].label:"IdP"} client in the strategy's client_id (the enrollment sign-in)`:""}.`);
+    if(vault.auth!=="static") notes.push(`The RFC 8693 exchange runs between the AI Gateway and Token Vault only. ${vault.label} never receives your IdP token: ${vault.mode==="user"?"each caller":"an admin"} authorizes ${vault.auth==="dcr"?"the client Token Vault registered (DCR)":"your OAuth app"} once on ${vault.label}'s consent screen; the gateway's /_vault/callback redeems the authorization code, encrypts the token with the vault key and stores it in Token Vault, which then refreshes the token before it expires (provider refresh_buffer_seconds).`);
     if(vault.subject==="access_token") warns.push(`Token Vault only accepts tokens from a trusted IdP on the directory with vault_access_enabled: true. Its issuer_url must match the token's iss exactly (${d0issuer(s)}).`);
     warns.push("Keep the vault private key on the data planes only (vault reference in the token-vault datastore). Konnect keeps the public key and can't decrypt stored credentials. Generated config never contains the key.");
     if(vault.mode==="user" && s.cred!=="apikey") notes.push("Enrollment protection (token_vault on the openid-connect auth strategy) makes callers sign in before they authorize an upstream account, so an enrollment link can't store someone else's credential.");
@@ -562,7 +576,7 @@ function derive(s){
   if(s.idp==="entra" && cl) warns.push("Entra ID groups are object IDs. Use app roles (roles claim) and name the groups after the roles.");
   if(pr) warns.push("Principals are cached on the data plane (10 min by default): metadata changes are not instant.");
   if(pr && aigw24(s)) notes.push("AI Gateway 2.4 refreshes a cached principal in the background during the last quarter of its TTL and keeps serving it while Kong Identity is briefly unreachable. Self-managed nodes can also share the cache through Redis (principals_cache on key-auth and openid-connect); Konnect auth strategies don't expose it yet.");
-  if(pr && groups.length && s.access!=="meta") warns.push("Two teams write the same metadata key (consumer_groups). Run membership changes through one provisioning pipeline.");
+  if(pr && groups.length && s.access!=="meta" && !jit) warns.push("Two teams write the same metadata key (consumer_groups). Run membership changes through one provisioning pipeline.");
   if(s.cred==="apikey" && s.caller==="employees") warns.push("Personal API keys don't follow joiners/leavers. Rotate them and set expires_at.");
   if(co) notes.push("Consumers are created per control plane. With several control planes, every Consumer and its credentials is duplicated.");
   if(plans.includes("tier-cg") && plans.includes("bu-cg")) notes.push("The API plan (rate-limiting-advanced) and the BU plan (rate-limiting) are different plugins, so both apply.");
@@ -578,7 +592,16 @@ function derive(s){
   if(buDim && pr && !groups.some(g=>g.kind==="bu"||g.name.startsWith("bu-"))) notes.push(aigw24(s)
     ? "AI Gateway 2.4 sends principal.metadata (bu included) with each analytics record, but Konnect Explorer can't group by it yet: keep a BU group or a log label to report by BU."
     : "Principal metadata isn't an analytics dimension: keep a BU group or a log label to report by BU.");
-  return {ai,ai1,aiAny,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans,vault};
+  if(princClaim) notes.push(`The principal lookup reads principal_claim (default sub), so the strategy sets principal_claim: [${princClaim}] to match the oidc identity on ${princClaim}.`);
+  if(jit){
+    const mk=Object.keys(jit.mapping.metadata);
+    notes.push(`Automatic user provisioning (JIT): no principal to create per employee. On ${who.name}'s first call the lookup finds no principal, and the trusted IdP (jit_provisioning_enabled, "Automatic user provisioning" in Konnect) creates one keyed on ${jit.mapping.identifier||"sub"}. principals.jit.claims sends ${jit.claims.join(", ")} with the lookup; the trusted IdP mapping ("Set metadata") turns them into the display name, an email identity and metadata (${mk.join(", ")}). On later calls Kong Identity rewrites the mapped keys and keeps the others.`);
+    if(jit.mapping.metadata.consumer_groups||jit.mapping.metadata.subscriptions) notes.push(`The ${idp.groups} claim fills ${["consumer_groups","subscriptions"].filter(k=>jit.mapping.metadata[k]).join(" and ")}: name the ${idp.label} groups after ${jit.mapping.metadata.consumer_groups?`the Consumer Groups (${groups.map(g=>g.name).join(", ")})`:""}${jit.mapping.metadata.consumer_groups&&jit.mapping.metadata.subscriptions?" and ":""}${jit.mapping.metadata.subscriptions?`the ${tgt.kind}s (${tgt.name})`:""}. department fills bu: a missing claim leaves the key unset.`);
+    notes.push("IdP changes reach the gateway when its cached principal expires: the directory's ttl_secs (600 s by default, 300 s minimum). A group added in the IdP opens access up to that long after the next token.");
+    if(!vault) notes.push("Trusted IdPs live under Token Vault: the directory needs vault_enabled: true even without a Token Vault provider (Konnect answers 403 \"Token vault is not enabled for this directory\" otherwise). Keep vault_access_enabled off on the trusted IdP.");
+    notes.push("With provisioning off, an employee without a principal gets 401 (principals.error_on_miss, default true). Without principals.enabled there is no principal at all: the employee is only a credential (the credential_claim value).");
+  }
+  return {ai,ai1,aiAny,pr,cl,co,who,idp,tgt,credClaim,groups,meta,warns,notes,auth,authStrategy,an,plans,vault,princClaim,jit};
 }
 
 /* lab-validated combinations */
@@ -674,7 +697,7 @@ function buildSeq(s,d){
   if(tokenFlow) steps.push({f:"auth",t:"auth",l:"verify signature (JWKS)",h:"Token verified",p:"Issuer, audience and expiry checked locally; JWKS cached."});
   if(d.cl) steps.push({f:"auth",t:"auth",l:`credential_claim → '${s.caller==="employees"?who.name:"<client_id>"}'`,h:"Virtual credential, no Consumer",p:"The claim becomes ctx.authenticated_credential. No Consumer lookup happens.",set:{credential:`{ id: "${s.caller==="employees"?who.name:"<client_id>"}" }  (virtual)`}});
   if(d.pr){
-    steps.push({f:"auth",t:"dir",l:tokenFlow?"fetch principal (mTLS, cached)":"authenticate key (mTLS, cached)",h:"Principal lookup",p:d.idp===IDP.ki?"Linked by an auth_server_client identity (auth server + client_id).":tokenFlow?`Linked by an oidc identity: issuer + ${d.credClaim}.`:"Key hash checked in the directory."});
+    steps.push({f:"auth",t:"dir",l:tokenFlow?"fetch principal (mTLS, cached)":"authenticate key (mTLS, cached)",h:"Principal lookup",p:d.idp===IDP.ki?"Linked by an auth_server_client identity (auth server + client_id).":d.jit?`Lookup by issuer + ${d.princClaim||"sub"}, with the claims in principals.jit. First call: no principal yet, so the trusted IdP provisions one (JIT) and maps the claims to metadata.`:tokenFlow?`Linked by an oidc identity: issuer + ${d.credClaim}.`:"Key hash checked in the directory."});
     steps.push({f:"dir",t:"auth",l:`principal ${who.name} + metadata`,h:"Identity and metadata",p:"Metadata drives groups, limits and conditions.",set:{principal:`${who.name}\nmetadata: ${JSON.stringify(d.meta)}`}});
   }
   if(d.co) steps.push({f:"auth",t:"auth",l:"Consumer matched",h:"Consumer entity",p:"Classic path: the Consumer must exist in this control plane.",set:{consumer:`${who.name} (Consumer)`}});
@@ -720,36 +743,42 @@ const hasEnrollView = d=>!!(d.vault&&d.vault.mode==="user");
 function buildSeqEnroll(s,d){
   if(!hasEnrollView(d)) return null;
   const v=d.vault, who=d.who, human=s.caller==="employees";
-  const signIn = human && s.cred!=="apikey";   // enrollment protection: openid-connect strategy with the credential manager
+  const signIn = s.cred!=="apikey";   // enrollment protection: the strategy's openid-connect login on /_vault/callback/initiate
   const elicit = aigw24(s);
-  const lanes=[L("c",who.label,who.name,"actor"),L("auth",d.auth.plugin,"AuthStrategy","plugin"),L("px","ai-mcp-proxy","MCP","plugin"),
+  const lanes=[L("c",who.label,who.name,"actor"),L("gw","ai-mcp-proxy","MCP route","plugin"),L("vh","/_vault","callback handler","plugin"),
     L("tv","Token Vault","Kong Identity","store"),L("br","Browser",human?who.name:"app owner","actor")];
   if(signIn) lanes.push(L("idp",d.idp.label,"sign-in","idp"));
   lanes.push(L("svc",v.label,"OAuth consent","idp"));
   const st=[];
-  st.push({f:"c",t:"auth",l:`POST /mcp (${elicit?"tools/call":"tools/list"})${s.cred==="apikey"?" · apikey":" · Bearer"}`,h:"First call to the MCP server",
+  st.push({f:"c",t:"gw",l:`POST /mcp tools/list${s.cred==="apikey"?" · apikey":" · Bearer"}`,h:"First call to the MCP server",
     p:"The caller authenticates and passes the access checks exactly as in the steady state."});
-  st.push({f:"auth",t:"px",l:"authenticated ✓",h:"Caller identified",p:"",set:{principal:`${who.name}${d.pr?" (principal)":` (${s.cred==="apikey"?"API key":"token iss + sub"})`}`}});
-  st.push({f:"px",t:"tv",l:`RFC 8693 exchange (${v.subject}) · provider ${v.name}`,h:"Upstream credential request",p:"The same exchange as on every call, over mTLS."});
-  st.push({f:"tv",t:"px",l:"not enrolled → enrollment URL",h:`No ${v.label} credential for ${who.name} yet`,
-    p:"Token Vault has nothing stored for this caller and provider. It returns an enrollment URL, valid 10 minutes.",set:{decision:`token vault: ${who.name} not enrolled`}});
+  st.push({f:"gw",t:"tv",l:`RFC 8693 exchange → not enrolled`,h:`No ${v.label} credential for ${who.name} yet`,
+    p:"The same exchange as on every call, over mTLS. Token Vault has nothing stored for this caller and provider.",set:{decision:`token vault: ${who.name} not enrolled`}});
+  st.push({f:"gw",t:"c",l:"2 virtual Token Vault tools",h:"Gated session",p:"Until the caller enrolls, tools/list returns only token_vault_authenticate and token_vault_check_authentication_status."});
+  st.push({f:"c",t:"gw",l:"tools/call token_vault_authenticate",h:"The client starts the authorization",p:"An agent calls it on its own: the tool description tells it to."});
   st.push(elicit
-    ? {f:"px",t:"c",l:"URL elicitation (enrollment URL)",h:"The client asks the user to open the link",p:"AI Gateway 2.4 sends an MCP URL elicitation. A client without elicitation support gets the URL in the tool result text instead."}
-    : {f:"px",t:"c",l:"virtual authenticate tool → URL",h:"Virtual tools until enrollment",p:"tools/list shows virtual authenticate and check_authentication_status tools instead of the real ones. Calling authenticate returns the enrollment URL."});
+    ? {f:"gw",t:"c",l:"-32042 URL elicitation (enrollment URL)",h:"The client asks the user to open the link",p:"AI Gateway 2.4 answers with a URL elicitation when the client declared URL mode at initialize; other clients get the URL in the tool result text. The URL points to the gateway's /_vault/callback/initiate and is valid 10 minutes."}
+    : {f:"gw",t:"c",l:"enrollment URL (tool result text)",h:"The client shows the link",p:"The URL points to the gateway's /_vault/callback/initiate and is valid 10 minutes."});
   st.push({f:"c",t:"br",l:"open the enrollment URL",h:human?`${who.name} opens the link`:"The app owner opens the link",
-    p:human?"In the browser, as the same person who made the call.":"An app or agent can't consent itself: a person enrolls the account it will use, once per app or agent."});
-  st.push({f:"br",t:"tv",l:"GET enrollment page",h:"Enrollment page",p:"Served for the provider and the caller the URL was issued to."});
+    p:human?"In the browser.":"An app or agent can't consent itself: a person enrolls the account it will use, once per app or agent."});
+  st.push({f:"br",t:"vh",l:"GET /_vault/callback/initiate",h:"Enrollment starts at the gateway",p:"Served by the token-vault-callback-handler policy."});
   if(signIn){
-    st.push({f:"br",t:"idp",l:"sign in",h:`Sign in at ${d.idp.label}`,p:"Enrollment protection: the page checks the signed-in user is the caller the link was issued to, so a forwarded link can't store someone else's account."});
-    st.push({f:"idp",t:"br",l:`${d.credClaim||"sub"}: ${who.name} ✓`,h:"Same person as the caller",p:"",set:{enrollment:`signed in as ${who.name}`}});
+    st.push({f:"br",t:"idp",l:"sign in (redirected by the gateway)",h:`Sign in at ${d.idp.label}`,p:"Enrollment protection: the initiate route logs the user in with openid-connect (authorization code, the strategy's client_id)."});
+    st.push({f:"idp",t:"vh",l:`code → session (${who.name})`,h:"Signed in at the gateway",p:"",set:{enrollment:`signed in as ${who.name}`}});
   }
-  st.push({f:"br",t:"svc",l:v.auth==="dcr"?"authorize Token Vault (registered by DCR)":"authorize your OAuth app",h:`Consent on ${v.label}'s own screen`,
-    p:v.auth==="dcr"?`Token Vault registered its own client on ${v.label} (DCR). The user approves the scopes there.`:`The user approves the OAuth app you registered on ${v.label}. ${v.label} never sees your IdP token.`});
-  st.push({f:"svc",t:"tv",l:"authorization code (callback)",h:"Token Vault stores the token",
-    p:`Token Vault exchanges the code for ${who.name}'s ${v.label} token, encrypts it with the directory's vault public key and stores it. It refreshes the token before it expires.`,
+  st.push({f:"vh",t:"tv",l:signIn?"resolve enrollment + signed-in user's token":"resolve enrollment",h:"Token Vault checks the link",
+    p:signIn?"Kong Identity checks the signed-in user is the caller the link was issued to. Someone else signing in gets \"Enrollment failed\" and never reaches the consent screen.":"Kong Identity returns the provider's authorization URL for this enrollment."});
+  st.push({f:"br",t:"svc",l:v.auth==="dcr"?"consent (client registered by DCR)":"consent (your OAuth app)",h:`Consent on ${v.label}'s own screen`,
+    p:`The gateway redirects the browser to ${v.label}'s authorization URL and sets the OAuth state as a cookie. ${v.label} never sees your IdP token.`});
+  st.push({f:"svc",t:"vh",l:"GET /_vault/callback (code, state)",h:"Back to the gateway",
+    p:`The callback handler checks the state against the cookie, redeems the code at ${v.label}'s token endpoint and encrypts the token with the vault key.`});
+  st.push({f:"vh",t:"tv",l:"store the sealed credential",h:"Enrolled",p:`Token Vault keeps ${who.name}'s ${v.label} token for this provider and refreshes it before it expires. The browser shows "Authorization complete".`,
     set:{decision:`token vault: ${v.label} token stored for ${who.name}`}});
-  st.push({f:"c",t:"px",l:elicit?"retry the call":"check_authentication_status → real tools",h:"Back in the client",
-    p:`${elicit?"The elicitation completes and the client retries.":"check_authentication_status confirms the enrollment; the real tools replace the virtual ones."} From here every call follows the steady-state flow: the exchange returns ${who.name}'s ${v.label} token.`});
+  st.push(elicit
+    ? {f:"gw",t:"c",l:"SSE: notifications/elicitation/complete",h:"The client learns it's done",p:"While the user is in the browser, the client keeps the session's SSE stream open; the gateway polls Token Vault, then sends elicitation/complete and tools/list_changed."}
+    : {f:"c",t:"gw",l:"token_vault_check_authentication_status → complete",h:"The client checks",p:"Once the user confirms, the client calls the check tool; it answers \"Authorization complete\"."});
+  st.push({f:"c",t:"gw",l:"re-initialize → real tools",h:"A new session with the real tools",
+    p:`The gated session ends (404 on its next request) and the client starts a new one. From here every call follows the steady state: the exchange returns ${who.name}'s ${v.label} token.`});
   st.forEach(x=>{if(x.set) for(const k in x.set) if(x.set[k]===undefined) delete x.set[k]});
   return {lanes,steps:st,band:`KONG AI GATEWAY ${s.version} · FIRST CALL`};
 }
@@ -801,7 +830,7 @@ function genDeclarativeAI1(s,d){
           issuer: ${iss}/.well-known/openid-configuration
           auth_methods: [bearer]
           audience_required: [kong-gateway]
-${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&g.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${s.access==="claimacl"&&s.target!=="mcp"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
+${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&g.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${s.access==="claimacl"&&s.target!=="mcp"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true${prExtraYaml(d)} }\n`:""}          cache_tokens_salt: change-me
           ssl_verify: true`:`      - name: key-auth
         config:
           key_names: [${s.caller==="employees"&&s.target==="models"?"apikey, x-api-key":"apikey"}]${s.caller==="employees"&&s.target==="models"?"   # x-api-key: Claude Code sends ANTHROPIC_API_KEY there":""}
@@ -871,7 +900,7 @@ function genDeclarative(s,d){
       issuer: ${iss}/.well-known/openid-configuration
       auth_methods: [bearer]
       audience_required: [kong-gateway]
-${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim: [${d.idp.groups}]\n      consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${d.co?`      consumer_claims: [[${d.credClaim||"sub"}]]\n      consumer_by: [custom_id]\n`:""}${d.pr?`      principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}      cache_tokens_salt: change-me
+${d.cl||d.pr?`      credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim: [${d.idp.groups}]\n      consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${d.co?`      consumer_claims: [[${d.credClaim||"sub"}]]\n      consumer_by: [custom_id]\n`:""}${d.pr?`      principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true${prExtraYaml(d)} }\n`:""}${d.vault&&d.vault.mode==="user"?`      client_id: [kong-vault-enrollment]   # public client: redirect URI https://<gateway>/_vault/callback/initiate (enrollment sign-in)\n`:""}      cache_tokens_salt: change-me
       ssl_verify: true${d.vault&&d.vault.mode==="user"?`
     token_vault: { enable_credential_manager: true }   # enrollment protection + self-service connectors page
     datastores: [{ name: token-vault }]`:""}`
@@ -1019,7 +1048,7 @@ ${cgs?`    consumer_groups:\n${cgs.replace(/^/gm,"  ")}\n`:""}${cons}${pol.lengt
           issuer: ${iss}/.well-known/openid-configuration
           auth_methods: [bearer]
           audience_required: [kong-gateway]
-${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${s.access==="claimacl"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true }\n`:""}          cache_tokens_salt: change-me
+${d.cl||d.pr?`          credential_claim: [${d.credClaim}]\n`:""}${d.cl&&d.groups.length?`          consumer_groups_claim: [${d.idp.groups}]\n          consumer_groups_optional: ${s.access!=="subcg"}\n`:""}${s.access==="claimacl"?`          authenticated_groups_claim: [${d.idp.groups}]\n`:""}${d.co?`          consumer_claim: [${d.credClaim||"sub"}]\n          consumer_by: [custom_id]\n`:""}${d.pr?`          principals: { enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true${prExtraYaml(d)} }\n`:""}          cache_tokens_salt: change-me
           ssl_verify: true`:`      - name: key-auth
         config:
           key_names: [apikey]
@@ -1121,7 +1150,7 @@ curl -s -X PATCH $KONNECT_API/v2/directories/$DIR -H "$H" -H 'content-type: appl
 openssl genrsa -out vault-private.pem 2048 && openssl rsa -in vault-private.pem -pubout -out vault-public.pem
 curl -s -X POST $KONNECT_API/v2/directories/$DIR/vault/keys -H "$H" -H 'content-type: application/json' \\
   -d "$(jq -n --rawfile k vault-public.pem '{name:"v1",public_key:$k}')"`);
-  if(v.subject==="access_token") out.push(`# Trusted IdP: Token Vault accepts tokens from this issuer (must equal the token's iss)
+  if(v.subject==="access_token" && !d.jit) out.push(`# Trusted IdP: Token Vault accepts tokens from this issuer (must equal the token's iss)
 curl -s -X POST $KONNECT_API/v2/directories/$DIR/trusted-idps -H "$H" -H 'content-type: application/json' \\
   -d '{"issuer_url":"${s.idp==="ki"?"'$ISSUER'":d.idp.issuer}","display_name":"${d.idp.label}","vault_access_enabled":true}'`);
   const body={template_name:v.tpl,name:v.name};
@@ -1168,7 +1197,13 @@ curl -s -X POST $KONNECT_API/v1/auth-servers/$AS/claims -H "$H" -H 'content-type
 DIR=$(curl -s $KONNECT_API/v2/directories -H "$H" | jq -r '.data[0].id // empty')
 [ -n "$DIR" ] || DIR=$(curl -s -X POST $KONNECT_API/v2/directories -H "$H" -H 'content-type: application/json' \\
   -d '{"name":"default","allow_all_control_planes":true}' | jq -r .id)`);
-  if(d.pr){
+  if(d.jit && !d.vault) out.push(`# Token Vault: enable it on the directory (trusted IdPs need it: Konnect answers 403 "Token vault is not enabled" otherwise)
+curl -s -X PATCH $KONNECT_API/v2/directories/$DIR -H "$H" -H 'content-type: application/json' -d '{"vault_enabled":true}'`);
+  if(d.jit) out.push(`# Trusted IdP with automatic user provisioning: the employee's principal is created on the first call
+# (Konnect: AI → Access Management → Identity Providers · "Automatic user provisioning" + "Set metadata")
+curl -s -X POST $KONNECT_API/v2/directories/$DIR/trusted-idps -H "$H" -H 'content-type: application/json' \\
+  -d '${JSON.stringify({issuer_url:d.idp.issuer,display_name:d.idp.label,jit_provisioning_enabled:true,vault_access_enabled:!!(d.vault&&d.vault.subject==="access_token"),jit:{mapping:d.jit.mapping}})}'`);
+  else if(d.pr){
     out.push(`
 # Principal (identity / security pipeline)
 P=$(curl -s -X POST $KONNECT_API/v2/directories/$DIR/principals -H "$H" -H 'content-type: application/json' \\
@@ -1273,7 +1308,7 @@ const principalType = s => s.caller==="agents"?"agent":s.caller==="employees"?"u
 // Directory, principal, identity and API key with the kong/konnect 3.28+ identity resources
 const tfDirectory = d => `resource "konnect_identity_directory" "default" {
   name                     = "default"   # one directory per region: import the existing one if you have it
-  allow_all_control_planes = true${d.vault?"\n  vault_enabled            = true":""}
+  allow_all_control_planes = true${d.vault||d.jit?`\n  vault_enabled            = true${d.vault?"":"   # trusted IdPs (automatic user provisioning) need it"}`:""}
 }`;
 /** Token Vault on the directory: vault key, trusted IdP, provider and shared credential (kong/konnect 3.28+). */
 function tfVault(s,d){
@@ -1283,7 +1318,7 @@ function tfVault(s,d){
   name         = "v1"
   public_key   = file("vault-public.pem")   # the data planes keep vault-private.pem
 }`);
-  if(v.subject==="access_token") out.push(`resource "konnect_identity_trusted_idp" "${s.idp}" {
+  if(v.subject==="access_token" && !d.jit) out.push(`resource "konnect_identity_trusted_idp" "${s.idp}" {
   directory_id         = konnect_identity_directory.default.id
   issuer_url           = ${s.idp==="ki"?"konnect_identity_auth_server.acme.issuer":`"${d.idp.issuer}"`}   # must equal the token's iss
   display_name         = "${d.idp.label}"
@@ -1311,6 +1346,25 @@ resource "konnect_identity_vault_provider_credential" "default" {
 }
 function tfPrincipal(s,d){
   const n=d.who.name.replace(/-/g,"_"), pt=principalType(s), out=[];
+  if(d.jit){
+    const m=d.jit.mapping, md=Object.entries(m.metadata).map(([k,v])=>`${k} = "${v}"`).join(", ");
+    out.push(`# Automatic user provisioning: principals are created on the first call, none declared here
+resource "konnect_identity_trusted_idp" "${s.idp}" {
+  directory_id             = konnect_identity_directory.default.id
+  issuer_url               = "${d.idp.issuer}"   # must equal the token's iss
+  display_name             = "${d.idp.label}"
+  jit_provisioning_enabled = true
+  vault_access_enabled     = ${!!(d.vault&&d.vault.subject==="access_token")}
+  jit = {
+    mapping = {${m.identifier?`\n      identifier   = "${m.identifier}"`:""}
+      display_name = "${m.display_name}"
+      email        = "${m.email}"
+      metadata     = { ${md} }
+    }
+  }
+}`);
+    return out;
+  }
   out.push(`resource "konnect_identity_principal" "${n}" {
   directory_id = konnect_identity_directory.default.id
   display_name = "${d.who.name}"${pt?`\n  type         = "${pt}"`:""}
@@ -1383,7 +1437,7 @@ ${oc?`    issuer            = "${d.idp.issuer}/.well-known/openid-configuration"
     auth_methods      = ["bearer"]
     audience_required = ["kong-gateway"]
 ${d.cl||d.pr?`    credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`    consumer_groups_claim = ["${d.idp.groups}"]\n`:""}    ssl_verify        = true`:`    key_names       = ["apikey"]\n    identity_realms = []`}
-${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
+${d.pr?`    principals = { enabled = true, directory = "default"${prExtraTf(d)} }`:""}
   }
 }`);
     if(s.access==="subcg"&&s.target!=="mcp") t.push(`resource "konnect_gateway_plugin_acl" "subscription" {
@@ -1463,7 +1517,7 @@ ${oc?`      issuer            = "${d.idp.issuer}/.well-known/openid-configuratio
       auth_methods      = ["bearer"]
       audience_required = ["kong-gateway"]
 ${d.cl||d.pr?`      credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`      consumer_groups_claim = ["${d.idp.groups}"]\n`:""}      cache_tokens_salt = "change-me"\n      ssl_verify        = true`:`      key_names = ["apikey"]`}
-${d.pr?`      principals = { enabled = true, directory = "default", error_on_miss = true${oc?", match_consumer_groups = true":""} }`:""}
+${d.pr?`      principals = { enabled = true, directory = "default", error_on_miss = true${oc?", match_consumer_groups = true":""}${prExtraTf(d)} }`:""}
     }${oc&&d.vault&&d.vault.mode==="user"?`
     token_vault = { enable_credential_manager = true }   # enrollment protection
     datastores  = [{ name = konnect_ai_gateway_datastore.token_vault.token_vault.name }]`:""}
@@ -1527,7 +1581,7 @@ ${oc?`    issuer            = "${d.idp.issuer}/.well-known/openid-configuration"
     auth_methods      = ["bearer"]
     audience_required = ["kong-gateway"]
 ${d.cl||d.pr?`    credential_claim  = ["${d.credClaim}"]\n`:""}${d.cl&&d.groups.length?`    consumer_groups_claim = ["${d.idp.groups}"]\n`:""}    ssl_verify        = true`:`    key_names       = ["apikey"]\n    identity_realms = []`}
-${d.pr?`    principals = { enabled = true, directory = "default" }`:""}
+${d.pr?`    principals = { enabled = true, directory = "default"${prExtraTf(d)} }`:""}
   }
 }`);
     if(s.access==="subcg") t.push(`resource "konnect_gateway_plugin_acl" "subscription" {

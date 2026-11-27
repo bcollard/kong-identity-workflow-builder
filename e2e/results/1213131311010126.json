@@ -1,0 +1,165 @@
+{
+  "id": "v1.10.2-1213131311010126A",
+  "payload": "1213131311010126",
+  "date": "2026-11-26T13:06:09Z",
+  "builder": "v1.11.0",
+  "environment": "Konnect AI Gateway created for the run, AI Gateway 2.3.2 data plane on kind; Token Vault with a custom-oauth provider (Keycloak standing in for the upstream service); Keycloak employees; mock MCP server; scripted MCP client (text) and browser",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "1bc937e4704bd7",
+    "api": "1149c9a440ad83"
+  },
+  "passed": 17,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "env",
+      "what": "ai_gateway name acme-aigw → e2e-1213131311010126a"
+    },
+    {
+      "kind": "env",
+      "what": "hybrid data plane certificate and proxy URL added"
+    },
+    {
+      "kind": "substitution",
+      "what": "auth_strategies(employees-auth).issuer https://keycloak.example.com/realms/acme/.well-known/openid-configuration → lab Keycloak realm"
+    },
+    {
+      "kind": "substitution",
+      "what": "mcp_server internal-tools url https://mcp.internal.example/mcp → lab mock MCP server"
+    },
+    {
+      "kind": "env",
+      "what": "mcp_server internal-tools token_vault.provider internal → e2e-1213131311010126a (unique provider for the run)"
+    },
+    {
+      "kind": "substitution",
+      "what": "auth_strategies(employees-auth) client_id kong-vault-enrollment → the lab's public Keycloak client for the enrollment sign-in"
+    },
+    {
+      "kind": "substitution",
+      "what": "API script: issuer → lab Keycloak realm; provider name, vault key name made unique; OAuth app (client id/secret, endpoints) → a lab Keycloak client"
+    }
+  ],
+  "checks": [
+    {
+      "step": "1",
+      "check": "initialize through the gateway (alice's token)",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "1-4",
+      "check": "not enrolled: tools/list shows only the two virtual Token Vault tools",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "5",
+      "check": "authenticate hands out the enrollment URL (tool result text)",
+      "expected": "text",
+      "actual": "text",
+      "pass": true
+    },
+    {
+      "step": "5",
+      "check": "enrollment URL points at the gateway's /_vault/callback/initiate",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "6-7",
+      "check": "bob signing in on alice's link is refused before the consent screen (enrollment protection)",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "6-7",
+      "check": "the browser goes through the gateway's /_vault/callback/initiate",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "8",
+      "check": "the gateway sends the browser to the IdP sign-in (enrollment protection)",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "10",
+      "check": "then to the service's consent screen",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "11",
+      "check": "the service redirects back to the gateway's /_vault/callback with a code",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "12",
+      "check": "the gateway shows the enrollment as complete",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "13",
+      "check": "check_authentication_status: authorization complete",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "13",
+      "check": "the real tools replace the virtual ones (after the 404, re-initialized)",
+      "expected": "whoami",
+      "actual": "whoami",
+      "pass": true
+    },
+    {
+      "step": "steady",
+      "check": "the MCP server receives alice's stored credential (issued to the upstream client)",
+      "expected": "e2e-vault-upstream-10126a",
+      "actual": "e2e-vault-upstream-10126a",
+      "pass": true
+    },
+    {
+      "step": "steady",
+      "check": "for the same person",
+      "expected": "alice",
+      "actual": "alice",
+      "pass": true
+    },
+    {
+      "step": "steady",
+      "check": "never the caller's gateway token",
+      "expected": "True",
+      "actual": "True",
+      "pass": true
+    },
+    {
+      "step": "steady",
+      "check": "a new session for alice goes straight to the real tools",
+      "expected": "whoami",
+      "actual": "whoami",
+      "pass": true
+    },
+    {
+      "step": "steady",
+      "check": "bob is still not enrolled",
+      "expected": "token_vault_authenticate,token_vault_check_authentication_status",
+      "actual": "token_vault_authenticate,token_vault_check_authentication_status",
+      "pass": true
+    }
+  ]
+}

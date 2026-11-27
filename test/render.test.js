@@ -270,7 +270,7 @@ test("click through an AI Gateway 2.3 MCP server with Token Vault", { skip: !KON
   assert.equal(res.querySelector('[data-view="enroll"]').getAttribute("aria-pressed"), "true");
   assert.notEqual(text(doc.getElementById("sn")), steadyCount, "the diagram plays other steps");
   assert.match(doc.getElementById("diagram").textContent, /Browser/);
-  assert.match(text(doc.getElementById("sh")), /Back in the client/, "ends on the retry");
+  assert.match(text(doc.getElementById("sh")), /new session with the real tools/, "ends on the re-initialized session");
   res.querySelector('[data-view="steady"]').click();
   assert.equal(text(doc.getElementById("sn")), steadyCount);
   w.close();

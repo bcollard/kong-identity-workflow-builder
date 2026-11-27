@@ -1,0 +1,200 @@
+{
+  "id": "v1.10.3-121511132210017",
+  "payload": "12151113221001",
+  "date": "2026-11-27T13:31:47Z",
+  "builder": "v1.11.0",
+  "environment": "Konnect AI Gateway created for the run, AI Gateway 2.4.0 (aigw-master build) data plane on kind; Keycloak employees; trusted IdP with automatic user provisioning; mock LLM upstream",
+  "raw_generated_file": "accepted",
+  "hashes": {
+    "decl": "197e6277291ba8",
+    "api": "00cbb7a91343bb"
+  },
+  "passed": 22,
+  "failed": 0,
+  "changes": [
+    {
+      "kind": "env",
+      "what": "ai_gateway name acme-aigw → e2e-121511132210017"
+    },
+    {
+      "kind": "env",
+      "what": "hybrid data plane certificate and proxy URL added"
+    },
+    {
+      "kind": "env",
+      "what": "min_runtime_version 2.4 → 2.3 (Konnect accepts up to 2.3 today)"
+    },
+    {
+      "kind": "substitution",
+      "what": "auth_strategies(employees-auth).issuer https://keycloak.example.com/realms/acme/.well-known/openid-configuration → lab Keycloak realm"
+    },
+    {
+      "kind": "substitution",
+      "what": "model_providers(openai) Authorization {vault://env/openai-auth-header} → lab mock key (no vault on the lab data plane)"
+    },
+    {
+      "kind": "substitution",
+      "what": "model gpt-large target gpt-4.1 upstream → lab mock LLM"
+    },
+    {
+      "kind": "substitution",
+      "what": "API script: trusted IdP issuer_url → lab Keycloak realm"
+    }
+  ],
+  "checks": [
+    {
+      "step": "1-2",
+      "check": "Keycloak token for alice carries name, email, department, groups",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "pre",
+      "check": "no principal for alice before the first call",
+      "expected": "none",
+      "actual": "none",
+      "pass": true
+    },
+    {
+      "step": "3",
+      "check": "no token → 401",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "4-6",
+      "check": "alice's first call (no principal yet) → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "principal provisioned for alice by the trusted IdP",
+      "expected": "trusted_idp",
+      "actual": "trusted_idp",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "identity keyed on preferred_username (jit.mapping.identifier = principal_claim)",
+      "expected": "preferred_username=alice",
+      "actual": "preferred_username=alice",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "display_name from the name claim",
+      "expected": "alice lab",
+      "actual": "alice lab",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "metadata bu from the department claim",
+      "expected": "finance",
+      "actual": "finance",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "metadata consumer_groups from the groups claim",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "alice is metered by the standard-tier budget (group from JIT metadata)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "7",
+      "check": "alice's remaining budget decreases (partition by principal)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "8-10",
+      "check": "response comes from the upstream (mock LLM)",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "bob (bu-logistics, no subscription group) → 403 after provisioning",
+      "expected": "403",
+      "actual": "403",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "principal provisioned for bob too",
+      "expected": "trusted_idp",
+      "actual": "trusted_idp",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "bob right after the group change: cached principal → still 403",
+      "expected": "403",
+      "actual": "403",
+      "pass": true
+    },
+    {
+      "step": "jit",
+      "check": "bob added to ai-sub-gpt-large in Keycloak → metadata consumer_groups updated",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
+      "step": "access",
+      "check": "bob after the group change → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "miss",
+      "check": "provisioning off: carol (no principal) → 401 (error_on_miss)",
+      "expected": "401",
+      "actual": "401",
+      "pass": true
+    },
+    {
+      "step": "miss",
+      "check": "no principal created for carol",
+      "expected": "none",
+      "actual": "none",
+      "pass": true
+    },
+    {
+      "step": "miss",
+      "check": "provisioning off: alice's JIT principal still exists",
+      "expected": "trusted_idp",
+      "actual": "trusted_idp",
+      "pass": true
+    },
+    {
+      "step": "miss",
+      "check": "provisioning off: dave (principal created ahead) → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "miss",
+      "check": "provisioning off: alice (JIT principal) → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    }
+  ]
+}
