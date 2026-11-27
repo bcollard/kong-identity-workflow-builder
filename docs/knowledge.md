@@ -71,8 +71,21 @@ The wizard's "identity record" step decides where Kong finds the caller and its 
   - turning provisioning off keeps existing JIT principals working; an unknown user gets 401 (`error_on_miss`);
   - lab note: on 2026-11-27 Konnect started sending an `ai_gateway_settings` entity that an `aigw-master` build cached
     from before 2026-11-26 rejects ("unknown delta type"): the node loads no config and answers 404. Pull a fresh image;
+  - `jit.mapping.groups` puts the principal in Kong Identity groups named by a claim (string or array; missing groups
+    are created; 100 per token). These are not Consumer Groups: `match_consumer_groups` reads only
+    `metadata.consumer_groups` (`openid-connect/handler.lua`). The gateway sees them as `principal.groups`, a list of
+    `{id, type}` with no names: CEL in `condition` / `allow_when` (AI Gateway 2.3.0) needs the group UUID
+    (`principal.groups.exists(g, g.id == "<uuid>")`), and the analytics payload carries the same list. On 2.4 the
+    access-policy-engine (Cedar) uses them as the principal's parents. A group has `type` `group` or `team` (a team can
+    have a manager), metadata and its own API keys;
+    `lab-verified` 2026-11-27 (2.4.0): JIT created the groups (`provisioned_by: trusted_idp`) and the principal's
+    `groups` (plain UUID strings in the Konnect API) listed them; a later run reused the existing groups by name; a model
+    `allow_when` on `principal.groups.exists(g, g.id == "<uuid>")` allowed a member (200) and denied a principal outside
+    it (403). Deleting a principal leaves the JIT-created groups in the directory;
   - kongctl `identity.directories[].trusted_idps[].jit`, Terraform `konnect_identity_trusted_idp.jit`;
-  - the builder uses it for employees with an external IdP on AI Gateway 2.3+ (Konnect): `jit.claims` = name, email,
+  - the builder offers it as the "Principal provisioning" step (employees, external IdP, principals, AI Gateway 2.3+ on
+    Konnect): "Created on first call" (default; IDs from before v1.12.0 open with it) or "Provisioned ahead by your
+    pipeline" (a principal per employee, no trusted IdP). With JIT it uses `jit.claims` = name, email,
     department and the groups claim; mapping `bu ← department`, `consumer_groups`/`subscriptions ← groups claim`.
     `lab-verified` 2026-11-27 on Konnect (2.3.2 and 2.4.0 data planes, Keycloak employees, sub-CG ACL + LLM budget):
     first call provisions the principal (display name, `preferred_username` identity, `bu`, `consumer_groups`), the

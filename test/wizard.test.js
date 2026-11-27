@@ -42,7 +42,7 @@ test("Token Vault: AI Gateway 2.3 MCP servers on Konnect, with an IdP token or a
 });
 
 test("scenario IDs: answers without the later steps keep their payload; AI Gateway IDs from before the version step open as 2.2", () => {
-  const api = { product: "api", deploy: "konnect", version: "3.16", caller: "apps", target: null, cred: "apikey", idp: null, record: "principals", access: "subcg", plans: ["tier-cg"], analytics: ["konnect"], upstream: null, provider: null };
+  const api = { product: "api", deploy: "konnect", version: "3.16", caller: "apps", target: null, cred: "apikey", idp: null, record: "principals", access: "subcg", plans: ["tier-cg"], analytics: ["konnect"], upstream: null, provider: null, provision: null };
   assert.equal(X.scenarioPayload(api).length, 1 + 9 + 2 * 2, "no characters for unanswered later steps");
   const ai = { ...api, product: "ai", version: null, target: "models", cred: "cc", idp: "ki", plans: ["llm"] };
   const old = X.scenarioId(ai, "1.7.0"), p = X.parseScenarioId(old);
@@ -264,13 +264,20 @@ test("MCP servers with an ACL: the apply steps list the access tests", () => {
 });
 
 test("employees on AI Gateway 2.3+: principals provisioned just in time by the trusted IdP; lookup claim matches the identity", konnectOnly, () => {
-  const base = { product: "ai", deploy: "konnect", caller: "employees", target: "models", cred: "oidc", record: "principals", access: "subcg", plans: ["llm"], analytics: ["konnect"] };
+  const base = { product: "ai", deploy: "konnect", caller: "employees", target: "models", cred: "oidc", record: "principals", access: "subcg", plans: ["llm"], analytics: ["konnect"], provision: "jit" };
   reset({ ...base, version: "2.3", idp: "okta" });
+  assert.ok(visible("provision"), "provisioning step on 2.3 with an external IdP");
   let d = X.derive(X.S);
   assert.ok(d.jit, "JIT on 2.3 with an external IdP");
   assert.equal(JSON.stringify(d.jit.mapping.metadata), JSON.stringify({ bu: "department", consumer_groups: "groups" }));
   assert.equal(d.princClaim, null, "Okta employees are looked up on sub, the default");
-  assert.match(X.genDeclarative(X.S, d).text, /principals: \{ enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true, jit: \{ claims: \[name, email, department, groups\] \} \}/);
+  assert.match(X.genDeclarative(X.S, d).text, /principals: \{ enabled: true, directory: default, match_consumer_groups: true, error_on_miss: true, jit: \{ claims: \[name, email, groups, department\] \} \}/);
+  assert.equal(d.jit.mapping.groups, "groups", "Kong Identity groups from the groups claim");
+  assert.ok(d.notes.some(n => /not Consumer Groups/.test(n) && /g\.id ==/.test(n)));
+  // IDs minted before the step (v1.11.0 generated JIT) open as JIT, and JIT keeps their payload
+  const legacy = X.parseScenarioId(X.scenarioId({ ...X.S, provision: null }, "1.11.0"));
+  assert.equal(legacy.state.provision, "jit");
+  assert.equal(X.scenarioPayload({ ...X.S, provision: null }), X.scenarioPayload(X.S));
   const api = X.genApi(X.S, d).text;
   assert.match(api, /"jit_provisioning_enabled":true,"vault_access_enabled":false,"jit":\{"mapping":\{"display_name":"name"/);
   assert.doesNotMatch(api, /# Principal \(identity/, "no principal to create per employee");
@@ -282,9 +289,17 @@ test("employees on AI Gateway 2.3+: principals provisioned just in time by the t
   assert.equal(d.jit.mapping.identifier, "preferred_username");
   assert.match(X.genDeclarative(X.S, d).text, /principal_claim: \[preferred_username\]/);
   // 2.2 has no principals.jit: principals are created ahead, with principal_claim matching their identity
-  reset({ ...base, version: "2.2", idp: "keycloak" });
+  reset({ ...base, version: "2.2", idp: "keycloak", provision: null });
+  assert.ok(!visible("provision"), "no provisioning step on 2.2");
   d = X.derive(X.S);
   assert.equal(d.jit, null);
   assert.match(X.genApi(X.S, d).text, /# Principal \(identity/);
   assert.match(X.genDeclarative(X.S, d).text, /principal_claim: \[preferred_username\]/);
+  // pipeline: a principal per employee, no trusted IdP, no vault_enabled
+  reset({ ...base, version: "2.3", idp: "okta", provision: "pipeline" });
+  d = X.derive(X.S);
+  assert.equal(d.jit, null);
+  const pipeApi = X.genApi(X.S, d).text;
+  assert.match(pipeApi, /# Principal \(identity/); assert.doesNotMatch(pipeApi, /trusted-idps|vault_enabled/);
+  assert.equal(X.parseScenarioId(X.scenarioId(X.S)).state.provision, "pipeline");
 });

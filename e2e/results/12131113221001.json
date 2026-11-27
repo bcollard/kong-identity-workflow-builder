@@ -1,20 +1,20 @@
 {
-  "id": "v1.10.3-12131113221001F",
+  "id": "v1.11.0-12131113221001Z",
   "payload": "12131113221001",
-  "date": "2026-11-27T12:44:33Z",
-  "builder": "v1.11.0",
+  "date": "2026-11-27T16:39:01Z",
+  "builder": "v1.12.0",
   "environment": "Konnect AI Gateway created for the run, AI Gateway 2.3.2 data plane on kind; Keycloak employees; trusted IdP with automatic user provisioning; mock LLM upstream",
   "raw_generated_file": "accepted",
   "hashes": {
-    "decl": "05f2511bb3926a",
-    "api": "00cbb7a91343bb"
+    "decl": "04265cd3238e3b",
+    "api": "15f5f452255dbb"
   },
-  "passed": 22,
+  "passed": 25,
   "failed": 0,
   "changes": [
     {
       "kind": "env",
-      "what": "ai_gateway name acme-aigw → e2e-12131113221001f"
+      "what": "ai_gateway name acme-aigw → e2e-12131113221001z"
     },
     {
       "kind": "env",
@@ -123,6 +123,13 @@
       "pass": true
     },
     {
+      "step": "groups",
+      "check": "alice is in the Kong Identity groups named after her Keycloak groups",
+      "expected": "yes",
+      "actual": "yes",
+      "pass": true
+    },
+    {
       "step": "access",
       "check": "bob (bu-logistics, no subscription group) → 403 after provisioning",
       "expected": "403",
@@ -190,6 +197,20 @@
       "check": "provisioning off: alice (JIT principal) → gpt-large",
       "expected": "200",
       "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "groups",
+      "check": "CEL allow_when on the Kong Identity group UUID: alice (member) → gpt-large",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "groups",
+      "check": "CEL allow_when on the Kong Identity group UUID: dave (no group) → 403",
+      "expected": "403",
+      "actual": "403",
       "pass": true
     }
   ]

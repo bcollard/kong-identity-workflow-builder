@@ -56,8 +56,11 @@ The version step offers 2.4 (since v1.10.0). Still to do:
 
 ## Kong Identity JIT provisioning
 
-- Lab-verified on 2.3.2 and 2.4.0 (Keycloak). Not run: Okta or Entra (`oid` as identifier), `subscriptions` mapped from
-  the groups claim (metadata ACL), `jit.all_claims`.
+- Lab-verified on 2.3.2 and 2.4.0 (Keycloak), including Kong Identity groups and a CEL ACL on a group UUID. Not run: Okta
+  or Entra (`oid` as identifier), `subscriptions` mapped from the groups claim (metadata ACL), `jit.all_claims`, whether
+  removing a user from an IdP group removes the Kong Identity group membership.
+- The "Provisioned ahead by your pipeline" option is the pre-v1.11.0 output (lab-verified as such for the identity link);
+  no Konnect-side cleanup of leavers is generated.
 - API Gateway: `principals.jit` is on `kong-ee` master (no 3.16 release seen yet); offer it once a Kong Gateway release ships it.
 
 ## Wizard variables not covered yet

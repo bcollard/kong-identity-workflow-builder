@@ -257,7 +257,7 @@ const WHO = {
 };
 
 /* ---------- wizard definition ---------- */
-const S = {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null};
+const S = {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null,provision:null};
 const isAI = s=>s.product==="ai";            // AI Gateway 2.x entity model
 const isAI1 = s=>s.product==="ai1";          // AI Gateway 1.x: Kong Gateway + AI plugins
 const isAIany = s=>isAI(s)||isAI1(s);
@@ -280,6 +280,8 @@ const VAULT = {
 const oidcLike = s=>s.cred==="oidc"||s.cred==="cc";
 const d0issuer = s => s.idp ? IDP[s.idp].issuer : "";
 /** Per-caller LLM budget key: the principal on AI Gateway 2.3+ (all its credentials share one budget), else the (virtual) credential. */
+/** Automatic user provisioning (JIT) is offered for employees signing in at an external IdP, AI Gateway 2.3+ on Konnect. */
+const jitEligible = s=>isAI(s)&&s.deploy==="konnect"&&aigwAtLeast(s,3)&&s.caller==="employees"&&s.cred==="oidc"&&!!s.idp&&s.idp!=="ki"&&s.record==="principals";
 const llmUnit = s=>s.record==="principals"&&aigwAtLeast(s,3)?"principal":"credential";
 const llmPartition = s=>llmUnit(s)==="principal"?"{ type: principal, key: id, partition_by: true }":"{ type: credential, partition_by: true }";
 /** rate-limiting-advanced identifier for a per-caller limit: the Consumer, the 3.16 principal, or the (virtual) credential. */
@@ -352,6 +354,9 @@ const STEPS = [
        :(ai1&&s.target==="mcp"&&!gw316(s))?"MCP tool ACLs on a token claim need Kong Gateway 3.16: openid-connect hands the claims to ai-mcp-proxy from 3.16. On 3.15 they match nothing and deny every call."
        :(ai&&s.target!=="mcp"&&!aigw24(s))?"Model and agent ACLs read token claims from AI Gateway 2.4 (access_token.claims in allow_when). On 2.2 and 2.3, use subscription groups.":null}];
  }},
+ {id:"provision",title:"Principal provisioning",ask:"How does each employee get a principal?",visible:jitEligible,help:s=>"A principal must exist before the gateway can match it: an employee without one gets 401 (<code>principals.error_on_miss</code>). <b>Automatic user provisioning</b> (AI Gateway 2.3+) lets the trusted IdP in Konnect create it on the first call from the token claims. A pipeline gives you full control but has to run before an employee's first call.",options:s=>[
+   {v:"jit",label:"Created on first call",s:`Automatic user provisioning: the trusted IdP creates the principal from the ${IDP[s.idp]?.label||"IdP"} token. Metadata, Consumer Groups and Kong Identity groups come from its claims and follow IdP changes.`,ex:"principals.jit + trusted IdP jit.mapping",tag:"rec",tagText:"Recommended"},
+   {v:"pipeline",label:"Provisioned ahead by your pipeline",s:"Your identity pipeline creates each principal (oidc identity + metadata) through the Konnect API, kongctl or Terraform, and removes leavers.",ex:"konnect_identity_principal"}]},
  {id:"upstream",title:"Upstream auth",ask:"How does the gateway authenticate to the MCP server's upstream?",visible:s=>isAI(s)&&s.target==="mcp",help:s=>"<b>Token Vault</b> (Kong Identity) stores upstream credentials for GitHub, Slack and other services. The AI Gateway exchanges the caller's token with Token Vault (RFC 8693) for the matching credential and injects it: the caller and its agent never hold it. The upstream service only sees standard OAuth (consent once, then refresh), so it needs no token exchange support.",options:s=>{
    const why=!aigwAtLeast(s,3)?"Token Vault needs AI Gateway 2.3 or later.":s.deploy!=="konnect"?"Token Vault is Konnect only.":(s.cred==="apikey"&&s.record!=="principals")?"Token Vault exchanges an IdP token or a Kong Identity API key. Consumer keys can't be exchanged: pick principals.":null;
    return [
@@ -515,12 +520,12 @@ function derive(s){
   // OIDC principal lookups key on principal_claim (default sub): the oidc identity must use the same claim
   const princClaim = pr && s.cred!=="apikey" && idp && s.idp!=="ki" && credClaim && credClaim!=="sub" ? credClaim : null;
   // Automatic user provisioning (JIT, AI Gateway 2.3+): the trusted IdP creates the employee's principal on the first call
-  const jit = pr && ai && s.caller==="employees" && s.cred==="oidc" && idp && s.idp!=="ki" && s.deploy==="konnect" && aigwAtLeast(s,3) ? (()=>{
+  const jit = jitEligible(s) && s.provision==="jit" ? (()=>{
     const metadata={bu:"department"};
     if(meta.consumer_groups) metadata.consumer_groups=idp.groups;
     if(meta.subscriptions) metadata.subscriptions=idp.groups;
-    const mapping=Object.assign(princClaim?{identifier:princClaim}:{}, {display_name:"name",email:"email",metadata});
-    return {mapping, claims:[...new Set(["name","email",...Object.values(metadata)])]};
+    const mapping=Object.assign(princClaim?{identifier:princClaim}:{}, {display_name:"name",email:"email",groups:idp.groups,metadata});
+    return {mapping, claims:[...new Set(["name","email",idp.groups,...Object.values(metadata)])]};
   })() : null;
   // auth
   let auth;
@@ -597,6 +602,7 @@ function derive(s){
     const mk=Object.keys(jit.mapping.metadata);
     notes.push(`Automatic user provisioning (JIT): no principal to create per employee. On ${who.name}'s first call the lookup finds no principal, and the trusted IdP (jit_provisioning_enabled, "Automatic user provisioning" in Konnect) creates one keyed on ${jit.mapping.identifier||"sub"}. principals.jit.claims sends ${jit.claims.join(", ")} with the lookup; the trusted IdP mapping ("Set metadata") turns them into the display name, an email identity and metadata (${mk.join(", ")}). On later calls Kong Identity rewrites the mapped keys and keeps the others.`);
     if(jit.mapping.metadata.consumer_groups||jit.mapping.metadata.subscriptions) notes.push(`The ${idp.groups} claim fills ${["consumer_groups","subscriptions"].filter(k=>jit.mapping.metadata[k]).join(" and ")}: name the ${idp.label} groups after ${jit.mapping.metadata.consumer_groups?`the Consumer Groups (${groups.map(g=>g.name).join(", ")})`:""}${jit.mapping.metadata.consumer_groups&&jit.mapping.metadata.subscriptions?" and ":""}${jit.mapping.metadata.subscriptions?`the ${tgt.kind}s (${tgt.name})`:""}. department fills bu: a missing claim leaves the key unset.`);
+    notes.push(`The mapping also puts the principal in Kong Identity groups named after its ${idp.groups} claim (created if missing, 100 per token). They are not Consumer Groups: plans and subscription ACLs use metadata.consumer_groups. Kong Identity groups show in analytics (principal.groups) and in CEL as {id, type} entries, so an allow_when on one needs its UUID: principal.groups.exists(g, g.id == "<group id>").`);
     notes.push("IdP changes reach the gateway when its cached principal expires: the directory's ttl_secs (600 s by default, 300 s minimum). A group added in the IdP opens access up to that long after the next token.");
     if(!vault) notes.push("Trusted IdPs live under Token Vault: the directory needs vault_enabled: true even without a Token Vault provider (Konnect answers 403 \"Token vault is not enabled for this directory\" otherwise). Keep vault_access_enabled off on the trusted IdP.");
     notes.push("With provisioning off, an employee without a principal gets 401 (principals.error_on_miss, default true). Without principals.enabled there is no principal at all: the employee is only a credential (the credential_claim value).");
@@ -1359,6 +1365,7 @@ resource "konnect_identity_trusted_idp" "${s.idp}" {
     mapping = {${m.identifier?`\n      identifier   = "${m.identifier}"`:""}
       display_name = "${m.display_name}"
       email        = "${m.email}"
+      groups       = "${m.groups}"   # Kong Identity groups, not Consumer Groups
       metadata     = { ${md} }
     }
   }
@@ -1700,7 +1707,7 @@ function outputTabs(s,cfg){ return ["decl",...(/Nothing to call/.test(cfg.api.te
    CODES and ID_STEPS are append-only: never reorder, reuse or delete an entry (a retired option keeps its code). */
 const APP_VERSION = "dev"; // the server replaces this with the release version
 const ID_FORMAT = "1";     // format 1: one char per single-choice step, two chars (10-bit mask) per multi-choice step
-const ID_STEPS = ["product","deploy","version","caller","target","cred","idp","record","access","plans","analytics","upstream","provider"];
+const ID_STEPS = ["product","deploy","version","caller","target","cred","idp","record","access","plans","analytics","upstream","provider","provision"];
 const ID_BASE_STEPS = 11;   // steps of the first layout: later steps are omitted from the payload while they're unanswered
 const CODES = {
   product:["api","ai","ai1"], deploy:["konnect","self"], version:["3.16","3.15","2.3","2.2","2.4"],
@@ -1709,11 +1716,14 @@ const CODES = {
   access:["none","subcg","meta","claimacl","portal"],
   plans:["none","tier-cg","tier-meta","bu-cg","bu-meta","llm","pkg","app-cond","mcp-hits"],
   analytics:["konnect","bu","cost","agentan","prom","otel"],
-  upstream:["none","vault-user","vault-shared"], provider:["github","slack","atlassian-rovo","google","datadog","custom-oauth","static_secret"]};
+  upstream:["none","vault-user","vault-shared"], provider:["github","slack","atlassian-rovo","google","datadog","custom-oauth","static_secret"],
+  provision:["jit","pipeline"]};
 const B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"; // Crockford base32
 const MULTI_STEPS = new Set(["plans","analytics"]);
 const idCheck = str => B32[[...str].reduce((a,c,i)=>(a*31+c.charCodeAt(0)*(i+1))%32,7)];
 function scenarioPayload(s){
+  // provision "jit" is what IDs without the step decode to (legacyState), so it's encoded as absent: their payload stays
+  if(s.provision==="jit" && jitEligible(s)) s={...s, provision:null};
   let out = ID_FORMAT;
   for(const k of ID_STEPS){
     if(MULTI_STEPS.has(k)){
@@ -1732,7 +1742,9 @@ function scenarioPayload(s){
   return out;
 }
 /** Answers saved before a step existed: AI Gateway 2.x had no version step until v1.8.0 and generated 2.2 config. */
-function legacyState(st){ if(st.product==="ai" && st.version==null) st.version="2.2"; return st; }
+function legacyState(st){ if(st.product==="ai" && st.version==null) st.version="2.2";
+  if(st.provision==null && jitEligible(st)) st.provision="jit";   // before v1.12.0 these answers always generated JIT
+  return st; }
 /** Payload an earlier version minted for the same answers (AI Gateway 2.2 IDs had no version). */
 const legacyPayload = s => isAI(s)&&s.version==="2.2" ? scenarioPayload({...s,version:null}) : null;
 function scenarioId(s, version=APP_VERSION){ const body = `v${version}-${scenarioPayload(s)}`; return body + idCheck(body); }
@@ -1766,7 +1778,7 @@ function parseScenarioId(id){
 function openScenario(id){
   const r = parseScenarioId(id);
   if(r.error) return {ok:false, version:r.version, message:r.error};
-  Object.assign(S, {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null}, r.state);
+  Object.assign(S, {product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null,provision:null}, r.state);
   const before = JSON.stringify(S); prune(); const after = JSON.stringify(S);
   const dropped = ID_STEPS.filter(k => JSON.stringify(JSON.parse(before)[k]) !== JSON.stringify(S[k]));
   const ok = !r.unknown.length && before === after && complete();
@@ -1838,7 +1850,7 @@ function renderResult(){
     ["Product",`${S.product==="ai"?`AI Gateway ${S.version}`:S.product==="ai1"?`Kong Gateway ${S.version} + AI plugins (AI Gateway 1.x)`:`Kong Gateway ${S.version}`} · ${S.deploy==="konnect"?"Konnect":"self-managed"}`],
     ["Caller",`${WHO[S.caller].label}s${d.aiAny?" → "+d.tgt.kind+"s":d.portal?" → API package "+d.tgt.pkg:""}`],
     ["Credential",S.cred==="apikey"?(d.portal?"Portal-issued API keys":"API keys"):`${S.cred==="oidc"?"OIDC login":d.portal?"OAuth client credentials via DCR":"OAuth client credentials"} · ${d.idp.label}`],
-    ["Identity record",S.record==="claims"?`Token claims (virtual credential ${d.credClaim})`:S.record==="principals"?"Kong Identity principals":S.record==="portalapp"?"Portal application (auto-created principal)":"Consumers"],
+    ["Identity record",S.record==="claims"?`Token claims (virtual credential ${d.credClaim})`:S.record==="principals"?`Kong Identity principals${S.provision==="jit"?" (created on first call)":S.provision==="pipeline"?" (provisioned by your pipeline)":""}`:S.record==="portalapp"?"Portal application (auto-created principal)":"Consumers"],
     ["Auth",d.portal?`ace + application auth strategy (${S.cred==="cc"?"OIDC with DCR":"key-auth"})`:d.ai?`AuthStrategy ${d.auth.plugin}${d.pr?" + principals":""}`:`${d.auth.plugin}${d.pr?" (principals)":""}`],
     ["Access",STEPS.find(s=>s.id==="access").options(S).find(o=>o.v===S.access)?.label||"–"],
     ...(d.vault?[["Upstream auth",`Token Vault · ${d.vault.mode==="user"?"each caller's":"shared"} ${d.vault.label} credential (provider ${d.vault.name})`]]:[]),
@@ -1896,7 +1908,7 @@ function render(){
   if(location.pathname!==want) try{history.replaceState(null,"",want+location.search)}catch(e){}
 }
 function notice(msg,info){const n=document.getElementById("notice");n.hidden=!msg;n.textContent=msg||"";n.className="notice"+(info?" info":"")}
-document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
+document.getElementById("b-reset").onclick=()=>{stop();Object.assign(S,{product:null,deploy:null,version:null,caller:null,target:null,cred:null,idp:null,record:null,access:null,plans:[],analytics:[],upstream:null,provider:null,provision:null});cur="product";try{localStorage.removeItem("iwb")}catch(e){};notice("");render()};
 document.getElementById("b-sample").onclick=()=>{stop();Object.assign(S,{product:"ai",deploy:"konnect",version:"2.4",caller:"agents",target:"a2a",cred:"cc",idp:"ki",record:"principals",access:"subcg",plans:["none"],analytics:["konnect","agentan"]});cur="analytics";render();document.getElementById("result").scrollIntoView()};
 document.addEventListener("keydown",e=>{if(!seq||document.getElementById("result").hidden)return;if(e.target.closest("button,input"))return;if(e.key==="ArrowRight"){stop();moveTo(step+1,true)}if(e.key==="ArrowLeft"){stop();moveTo(step-1,true)}});
 (function consent(){ // Google Consent Mode: denied by default (see <head>), updated on the visitor's choice
